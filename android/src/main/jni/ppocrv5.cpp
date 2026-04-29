@@ -530,8 +530,15 @@ int PPOCRv5::draw(cv::Mat& rgb, const std::vector<Object>& objects)
             }
         }
 
+        cv::Point2f corners[4];
+        obj.rrect.points(corners);
+        float min_y = corners[0].y;
+        for (int k = 1; k < 4; k++) {
+            if (corners[k].y < min_y) min_y = corners[k].y;
+        }
+
         int x = obj.rrect.center.x - label_size.width / 2;
-        int y = obj.rrect.center.y - label_size.height / 2 - baseLine;
+        int y = min_y - label_size.height - baseLine - 4; // 4 pixels padding above the bounding box
         if (y < 0)
             y = 0;
         if (y + label_size.height > rgb.rows)
