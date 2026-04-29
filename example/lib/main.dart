@@ -17,7 +17,7 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(debugShowCheckedModeBanner: false, theme: ThemeData.dark(), home: const OcrScanScreen());
+    return MaterialApp(debugShowCheckedModeBanner: false, theme: ThemeData.light(), home: const OcrScanScreen());
   }
 }
 
@@ -167,6 +167,12 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
       setState(() => _showPreview = false);
       return;
     }
+    if (_ocrResult.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(backgroundColor: Colors.red, content: Text("Tidak ada hasil OCR")));
+      return;
+    }
 
     try {
       final dir = await getApplicationDocumentsDirectory();
@@ -212,7 +218,7 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
   void _showHistory() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1C1C1E),
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       isScrollControlled: true,
       builder: (_) => _HistorySheet(captures: _captureHistory),
@@ -239,41 +245,12 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
       height: frameH,
       child: Stack(
         children: [
-          // Scan line animasi
-          if (!_showPreview)
-            AnimatedBuilder(
-              animation: _scanAnim,
-              builder: (_, __) {
-                return Positioned(
-                  top: _scanAnim.value * frameH,
-                  left: 14,
-                  right: 14,
-                  child: Container(
-                    height: 2.5,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.transparent,
-                          Colors.blueAccent.withOpacity(0.8),
-                          Colors.white.withOpacity(0.95),
-                          Colors.blueAccent.withOpacity(0.8),
-                          Colors.transparent,
-                        ],
-                      ),
-                      boxShadow: [BoxShadow(color: Colors.blueAccent.withOpacity(0.5), blurRadius: 8, spreadRadius: 2)],
-                    ),
-                  ),
-                );
-              },
-            ),
-
-          // Corner brackets
           CustomPaint(
             size: const Size(frameW, frameH),
             painter: _CornerBracketPainter(
               cornerLength: cornerLen,
               strokeWidth: strokeW,
-              color: Colors.white,
+              color: Colors.lightGreen,
               radius: radius,
             ),
           ),
@@ -285,7 +262,7 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: Colors.white,
       body: Stack(
         children: [
           // Full-screen camera
@@ -295,11 +272,44 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
           if (_showPreview && _latestCapture != null)
             Positioned.fill(child: Image.file(File(_latestCapture!.photoPath), fit: BoxFit.cover)),
 
-          // Dark overlay
-          if (!_showPreview) Positioned.fill(child: Container(color: Colors.black.withOpacity(0.45))),
-
-          // Light overlay saat preview
-          if (_showPreview) Positioned.fill(child: Container(color: Colors.black.withOpacity(0.3))),
+          // Overlay dengan lubang transparan di area scan (berlaku untuk kamera dan preview)
+          Positioned.fill(
+            child: ColorFiltered(
+              colorFilter: ColorFilter.mode(Colors.black.withOpacity(0.6), BlendMode.srcOut),
+              child: Stack(
+                children: [
+                  Container(color: Colors.transparent),
+                  SafeArea(
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 20),
+                        Text(
+                          _showPreview ? "Hasil Foto" : "Arahkan kamera ke teks",
+                          style: const TextStyle(color: Colors.transparent, fontSize: 18, fontWeight: FontWeight.w500),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          _showPreview ? "Tekan foto lagi untuk scan baru" : "Pastikan teks berada di dalam area",
+                          style: const TextStyle(color: Colors.transparent, fontSize: 13),
+                        ),
+                        const SizedBox(height: 28),
+                        Center(
+                          child: Container(
+                            width: 300,
+                            height: 220,
+                            decoration: BoxDecoration(
+                              color: Colors.black, // Opaque color creates the transparent hole
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
 
           // Main UI
           SafeArea(
@@ -309,13 +319,13 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
 
                 // Title
                 Text(
-                  _showPreview ? "Hasil Foto" : "Arahkan kamera ke barcode",
+                  _showPreview ? "Hasil Foto" : "Arahkan kamera ke teks",
                   style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  _showPreview ? "Tekan foto lagi untuk scan baru" : "Pastikan barcode berada di dalam area",
-                  style: const TextStyle(color: Colors.white60, fontSize: 13),
+                  _showPreview ? "Tekan foto lagi untuk scan baru" : "Pastikan teks berada di dalam area",
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
                 ),
 
                 const SizedBox(height: 28),
@@ -323,6 +333,74 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
                 // Scan frame overlay
                 Center(child: _buildScanArea()),
 
+                const SizedBox(height: 38),
+
+                // Hasil OCR box
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4)),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Text(
+                              "Hasil OCR",
+                              style: TextStyle(color: Colors.black, fontSize: 15, fontWeight: FontWeight.w600),
+                            ),
+                            const Spacer(),
+                            if (_showPreview)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.check_circle, color: Colors.green, size: 14),
+                                    SizedBox(width: 4),
+                                    Text("Tersimpan", style: TextStyle(color: Colors.green, fontSize: 11)),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                          constraints: const BoxConstraints(maxHeight: 100),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[100],
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.black12),
+                          ),
+                          child: SingleChildScrollView(
+                            child: Text(
+                              _ocrResult.isEmpty ? "Belum ada hasil" : _ocrResult,
+                              style: TextStyle(
+                                color: _ocrResult.isEmpty ? Colors.black38 : Colors.black87,
+                                fontSize: 16,
+                                fontWeight: _ocrResult.isEmpty ? FontWeight.normal : FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
                 const Spacer(),
 
                 // Flash + Switch Camera buttons
@@ -348,7 +426,7 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
                           icon: Icons.cameraswitch_rounded,
                           label: "Putar",
                           active: false,
-                          activeColor: Colors.blueAccent,
+                          activeColor: Colors.green,
                           onTap: _switchCamera,
                         ),
 
@@ -373,10 +451,10 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
                     padding: const EdgeInsets.only(bottom: 4),
                     child: TextButton.icon(
                       onPressed: _showHistory,
-                      icon: const Icon(Icons.photo_library_outlined, color: Colors.white70, size: 18),
+                      icon: const Icon(Icons.photo_library_outlined, color: Colors.white, size: 18),
                       label: Text(
                         "Lihat semua (${_captureHistory.length})",
-                        style: const TextStyle(color: Colors.white70, fontSize: 13),
+                        style: const TextStyle(color: Colors.white, fontSize: 13),
                       ),
                     ),
                   ),
@@ -393,7 +471,7 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
                       icon: Icon(_showPreview ? Icons.camera_alt_outlined : Icons.camera_alt_rounded, size: 20),
                       label: Text(_showPreview ? "Foto Baru" : "Ambil Gambar", style: const TextStyle(fontSize: 15)),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: _showPreview ? const Color(0xFF1A3A5C) : const Color(0xFF2A2A2A),
+                        backgroundColor: Colors.green,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -403,69 +481,7 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
                   ),
                 ),
 
-                const SizedBox(height: 16),
-
-                // Hasil OCR box
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(color: const Color(0xFF1C1C1E), borderRadius: BorderRadius.circular(16)),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Text(
-                              "Hasil OCR",
-                              style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
-                            ),
-                            const Spacer(),
-                            if (_showPreview)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.greenAccent.withOpacity(0.15),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: const Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.check_circle, color: Colors.greenAccent, size: 14),
-                                    SizedBox(width: 4),
-                                    Text("Tersimpan", style: TextStyle(color: Colors.greenAccent, fontSize: 11)),
-                                  ],
-                                ),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                          constraints: const BoxConstraints(maxHeight: 100),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF2C2C2E),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: SingleChildScrollView(
-                            child: Text(
-                              _ocrResult.isEmpty ? "Belum ada hasil" : _ocrResult,
-                              style: TextStyle(
-                                color: _ocrResult.isEmpty ? Colors.white38 : Colors.white,
-                                fontSize: 16,
-                                fontWeight: _ocrResult.isEmpty ? FontWeight.normal : FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 32),
+                const SizedBox(height: 46),
               ],
             ),
           ),
@@ -474,8 +490,10 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
           Positioned(
             top: MediaQuery.of(context).padding.top + 8,
             left: 12,
-            child: IconButton(
-              icon: Icon(_cameraOpen ? Icons.close : Icons.videocam, color: Colors.white, size: 26),
+            child: IconButton.filled(
+              color: Colors.black45,
+              style: IconButton.styleFrom(backgroundColor: Colors.white),
+              icon: Icon(_cameraOpen ? Icons.close : Icons.videocam, color: Colors.black, size: 26),
               onPressed: _cameraOpen ? _closeCamera : (_modelLoaded ? _openCamera : null),
             ),
           ),
@@ -512,14 +530,15 @@ class _ActionButton extends StatelessWidget {
             width: 52,
             height: 52,
             decoration: BoxDecoration(
-              color: active ? activeColor.withOpacity(0.2) : const Color(0xFF2A2A2A),
+              color: active ? activeColor.withOpacity(0.2) : Colors.white,
               shape: BoxShape.circle,
-              border: Border.all(color: active ? activeColor : Colors.white24, width: 1.5),
+              border: Border.all(color: active ? activeColor : Colors.black12, width: 1.5),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4, offset: const Offset(0, 2))],
             ),
-            child: Icon(icon, color: active ? activeColor : Colors.white, size: 24),
+            child: Icon(icon, color: active ? activeColor : Colors.black87, size: 24),
           ),
           const SizedBox(height: 6),
-          Text(label, style: TextStyle(color: active ? activeColor : Colors.white60, fontSize: 11)),
+          Text(label, style: TextStyle(color: active ? activeColor : Colors.white, fontSize: 11)),
         ],
       ),
     );
@@ -548,12 +567,12 @@ class _HistorySheet extends StatelessWidget {
             Container(
               width: 40,
               height: 4,
-              decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(4)),
+              decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.circular(4)),
             ),
             const SizedBox(height: 16),
             const Text(
               "Riwayat Scan",
-              style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+              style: TextStyle(color: Colors.black87, fontSize: 17, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
             Expanded(
@@ -565,7 +584,14 @@ class _HistorySheet extends StatelessWidget {
                 itemBuilder: (_, i) {
                   final cap = captures[i];
                   return Container(
-                    decoration: BoxDecoration(color: const Color(0xFF2C2C2E), borderRadius: BorderRadius.circular(14)),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.black12),
+                      boxShadow: [
+                        BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 4, offset: const Offset(0, 2)),
+                      ],
+                    ),
                     child: Row(
                       children: [
                         // Thumbnail
@@ -579,8 +605,8 @@ class _HistorySheet extends StatelessWidget {
                             errorBuilder: (_, __, ___) => Container(
                               width: 90,
                               height: 90,
-                              color: Colors.grey[800],
-                              child: const Icon(Icons.broken_image, color: Colors.white38),
+                              color: Colors.grey[200],
+                              child: const Icon(Icons.broken_image, color: Colors.black26),
                             ),
                           ),
                         ),
@@ -595,7 +621,7 @@ class _HistorySheet extends StatelessWidget {
                                 Text(
                                   cap.ocrText.isEmpty ? "Tidak ada teks" : cap.ocrText,
                                   style: TextStyle(
-                                    color: cap.ocrText.isEmpty ? Colors.white38 : Colors.white,
+                                    color: cap.ocrText.isEmpty ? Colors.black38 : Colors.black87,
                                     fontSize: 15,
                                     fontWeight: FontWeight.bold,
                                   ),
@@ -605,7 +631,7 @@ class _HistorySheet extends StatelessWidget {
                                 const SizedBox(height: 6),
                                 Text(
                                   _formatTime(cap.timestamp),
-                                  style: const TextStyle(color: Colors.white38, fontSize: 12),
+                                  style: const TextStyle(color: Colors.black54, fontSize: 12),
                                 ),
                               ],
                             ),
