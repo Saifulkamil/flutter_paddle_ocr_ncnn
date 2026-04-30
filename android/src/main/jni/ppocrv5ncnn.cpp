@@ -130,59 +130,172 @@ void MyNdkCamera::on_image_render(cv::Mat& rgb) const
 
         if (g_ppocrv5)
         {
-            std::vector<Object> objects;
-            g_ppocrv5->detect_and_recognize(rgb, objects);
-
-            // extract OCR text from recognized objects
-            std::string all_text;
-            for (size_t i = 0; i < objects.size(); i++)
+            if (is_photo_mode) 
             {
-                std::string line_text;
-                for (size_t j = 0; j < objects[i].text.size(); j++)
-                {
-                    const Character& ch = objects[i].text[j];
-                    if (ch.id >= 0 && ch.id < character_dict_size)
-                    {
-                        line_text += character_dict[ch.id];
-                    }
-                }
-                if (!line_text.empty())
-                {
-                    if (!all_text.empty())
-                        all_text += "\n";
-                    all_text += line_text;
-                }
-            }
-
-            // store OCR text (thread-safe)
-            const_cast<MyNdkCamera*>(this)->set_ocr_text(all_text);
-
-            // handle photo capture request
-            {
+                // In photo mode, don't run continuous OCR to save power.
+                // Just check if capture is requested.
                 ncnn::MutexLockGuard cg(capture_lock);
                 if (capture_requested)
                 {
-                    // save the frame with OCR overlay drawn on it
-                    g_ppocrv5->draw(rgb, objects);
+                    __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "[PhotoMode] capture_requested=true, target_norm_w=%.3f, target_norm_h=%.3f, rgb=%dx%d", 
+                                        target_norm_w, target_norm_h, rgb.cols, rgb.rows);
+                    
+                    // 1. Save original full frame
+                    cv::Mat bgr_orig;
+                    cv::cvtColor(rgb, bgr_orig, cv::COLOR_RGB2BGR);
+                    cv::imwrite(capture_save_path, bgr_orig);
+                    __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "[PhotoMode] original saved to %s", capture_save_path.c_str());
 
-                    // convert RGB to BGR for imwrite
-                    cv::Mat bgr;
-                    cv::cvtColor(rgb, bgr, cv::COLOR_RGB2BGR);
-                    cv::imwrite(capture_save_path, bgr);
+                    std::string cropped_path = "";
+                    cv::Mat final_rgb = rgb;
 
-                    captured_photo_path = capture_save_path;
+                    // 2. Crop if target rect is defined
+                    if (target_norm_w > 0.0f && target_norm_h > 0.0f) 
+                    {
+                        int crop_w = (int)(rgb.cols * target_norm_w);
+                        int crop_h = (int)(rgb.rows * target_norm_h);
+                        __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "[PhotoMode] crop_w=%d, crop_h=%d", crop_w, crop_h);
+                        
+                        if (crop_w > 0 && crop_w <= rgb.cols && crop_h > 0 && crop_h <= rgb.rows) 
+                        {
+                            int crop_x = (rgb.cols - crop_w) / 2;
+                            int crop_y = (rgb.rows - crop_h) / 2;
+                            cv::Rect crop_region(crop_x, crop_y, crop_w, crop_h);
+                            final_rgb = rgb(crop_region).clone();
+                            __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "[PhotoMode] cropped region: x=%d y=%d w=%d h=%d", crop_x, crop_y, crop_w, crop_h);
+
+                            // 3. Run OCR specifically on the cropped image
+                            std::vector<Object> objects;
+                            g_ppocrv5->detect_and_recognize(final_rgb, objects);
+                            __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "[PhotoMode] OCR found %d objects", (int)objects.size());
+
+                            // 4. Extract text
+                            std::string all_text;
+                            for (size_t i = 0; i < objects.size(); i++)
+                            {
+                                std::string line_text;
+                                for (size_t j = 0; j < objects[i].text.size(); j++)
+                                {
+                                    const Character& ch = objects[i].text[j];
+                                    if (ch.id >= 0 && ch.id < character_dict_size)
+                                    {
+                                        line_text += character_dict[ch.id];
+                                    }
+                                }
+                                if (!line_text.empty())
+                                {
+                                    if (!all_text.empty()) all_text += "\n";
+                                    all_text += line_text;
+                                }
+                            }
+                            const_cast<MyNdkCamera*>(this)->set_ocr_text(all_text);
+                            __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "[PhotoMode] OCR text length=%d", (int)all_text.length());
+
+                            // 5. Draw bounding boxes on the cropped image
+                            g_ppocrv5->draw(final_rgb, objects);
+
+                            // 6. Save the cropped image (with bounding boxes)
+                            cv::Mat bgr_crop;
+                            cv::cvtColor(final_rgb, bgr_crop, cv::COLOR_RGB2BGR);
+                            
+                            size_t dot_pos = capture_save_path.find_last_of('.');
+                            if (dot_pos != std::string::npos) {
+                                cropped_path = capture_save_path.substr(0, dot_pos) + "_crop" + capture_save_path.substr(dot_pos);
+                            } else {
+                                cropped_path = capture_save_path + "_crop.jpg";
+                            }
+                            cv::imwrite(cropped_path, bgr_crop);
+                            __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "[PhotoMode] crop saved to %s (%dx%d)", cropped_path.c_str(), bgr_crop.cols, bgr_crop.rows);
+                        }
+                        else
+                        {
+                            __android_log_print(ANDROID_LOG_WARN, "ncnn", "[PhotoMode] crop dimensions invalid! crop_w=%d crop_h=%d vs rgb=%dx%d", crop_w, crop_h, rgb.cols, rgb.rows);
+                        }
+                    }
+                    else
+                    {
+                        __android_log_print(ANDROID_LOG_WARN, "ncnn", "[PhotoMode] target_norm not set! w=%.3f h=%.3f", target_norm_w, target_norm_h);
+                    }
+
+                    if (!cropped_path.empty()) {
+                        captured_photo_path = capture_save_path + "|" + cropped_path;
+                    } else {
+                        captured_photo_path = capture_save_path;
+                    }
+                    
                     capture_requested = false;
-
-                    __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "photo saved to %s", captured_photo_path.c_str());
-
-#ifndef NDEBUG
-                    draw_fps(rgb);
-#endif
-                    return; // already drew overlay, skip drawing again
+                    __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "[PhotoMode] captured_photo_path=%s", captured_photo_path.c_str());
                 }
             }
+            else 
+            {
+                // Realtime Mode
+                std::vector<Object> objects;
+                g_ppocrv5->detect_and_recognize(rgb, objects);
 
-            g_ppocrv5->draw(rgb, objects);
+                // extract OCR text from recognized objects
+                std::string all_text;
+                for (size_t i = 0; i < objects.size(); i++)
+                {
+                    std::string line_text;
+                    for (size_t j = 0; j < objects[i].text.size(); j++)
+                    {
+                        const Character& ch = objects[i].text[j];
+                        if (ch.id >= 0 && ch.id < character_dict_size)
+                        {
+                            line_text += character_dict[ch.id];
+                        }
+                    }
+                    if (!line_text.empty())
+                    {
+                        if (!all_text.empty())
+                            all_text += "\n";
+                        all_text += line_text;
+                    }
+                }
+
+                // store OCR text (thread-safe)
+                const_cast<MyNdkCamera*>(this)->set_ocr_text(all_text);
+
+                // handle photo capture request in realtime mode
+                {
+                    ncnn::MutexLockGuard cg(capture_lock);
+                    if (capture_requested)
+                    {
+                        // save the frame with OCR overlay drawn on it
+                        g_ppocrv5->draw(rgb, objects);
+
+                        cv::Mat final_rgb = rgb;
+                        if (target_norm_w > 0.0f && target_norm_h > 0.0f) 
+                        {
+                            int crop_w = (int)(rgb.cols * target_norm_w);
+                            int crop_h = (int)(rgb.rows * target_norm_h);
+                            if (crop_w > 0 && crop_w <= rgb.cols && crop_h > 0 && crop_h <= rgb.rows) 
+                            {
+                                int crop_x = (rgb.cols - crop_w) / 2;
+                                int crop_y = (rgb.rows - crop_h) / 2;
+                                cv::Rect crop_region(crop_x, crop_y, crop_w, crop_h);
+                                final_rgb = rgb(crop_region).clone();
+                            }
+                        }
+
+                        cv::Mat bgr;
+                        cv::cvtColor(final_rgb, bgr, cv::COLOR_RGB2BGR);
+                        cv::imwrite(capture_save_path, bgr);
+
+                        captured_photo_path = capture_save_path;
+                        capture_requested = false;
+                        __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "photo saved to %s", captured_photo_path.c_str());
+
+#ifndef NDEBUG
+                        draw_fps(rgb);
+#endif
+                        return; // already drew overlay, skip drawing again
+                    }
+                }
+
+                g_ppocrv5->draw(rgb, objects);
+            }
         }
         else
         {
@@ -379,4 +492,84 @@ JNIEXPORT jstring JNICALL Java_com_iweka_ocr_PPOCRv5Ncnn_getOcrText(JNIEnv* env,
     return env->NewStringUTF(text.c_str());
 }
 
+// public native boolean setTargetRect(float norm_w, float norm_h);
+JNIEXPORT jboolean JNICALL Java_com_iweka_ocr_PPOCRv5Ncnn_setTargetRect(JNIEnv* env, jobject thiz, jfloat norm_w, jfloat norm_h)
+{
+    if (g_camera)
+    {
+        g_camera->set_target_rect(norm_w, norm_h);
+        return JNI_TRUE;
+    }
+    return JNI_FALSE;
 }
+
+// public native boolean setPhotoMode(boolean isPhoto);
+JNIEXPORT jboolean JNICALL Java_com_iweka_ocr_PPOCRv5Ncnn_setPhotoMode(JNIEnv* env, jobject thiz, jboolean isPhoto)
+{
+    if (g_camera)
+    {
+        g_camera->set_photo_mode(isPhoto == JNI_TRUE);
+        return JNI_TRUE;
+    }
+    return JNI_FALSE;
+}
+
+// public native String ocrFromImage(String imagePath);
+JNIEXPORT jstring JNICALL Java_com_iweka_ocr_PPOCRv5Ncnn_ocrFromImage(JNIEnv* env, jobject thiz, jstring imagePath)
+{
+    const char* image_path = env->GetStringUTFChars(imagePath, nullptr);
+
+    __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "ocrFromImage: %s", image_path);
+
+    cv::Mat bgr = cv::imread(image_path);
+    env->ReleaseStringUTFChars(imagePath, image_path);
+
+    if (bgr.empty())
+    {
+        __android_log_print(ANDROID_LOG_ERROR, "ncnn", "ocrFromImage: failed to load image");
+        return env->NewStringUTF("");
+    }
+
+    cv::Mat rgb;
+    cv::cvtColor(bgr, rgb, cv::COLOR_BGR2RGB);
+
+    ncnn::MutexLockGuard g(lock);
+
+    if (!g_ppocrv5)
+    {
+        __android_log_print(ANDROID_LOG_ERROR, "ncnn", "ocrFromImage: model not loaded");
+        return env->NewStringUTF("");
+    }
+
+    std::vector<Object> objects;
+    g_ppocrv5->detect_and_recognize(rgb, objects);
+
+    // extract OCR text (same logic as on_image_render)
+    std::string all_text;
+    for (size_t i = 0; i < objects.size(); i++)
+    {
+        std::string line_text;
+        for (size_t j = 0; j < objects[i].text.size(); j++)
+        {
+            const Character& ch = objects[i].text[j];
+            if (ch.id >= 0 && ch.id < character_dict_size)
+            {
+                line_text += character_dict[ch.id];
+            }
+        }
+        if (!line_text.empty())
+        {
+            if (!all_text.empty())
+                all_text += "\n";
+            all_text += line_text;
+        }
+    }
+
+    __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "ocrFromImage: found %d objects, text length %d",
+                        (int)objects.size(), (int)all_text.length());
+
+    return env->NewStringUTF(all_text.c_str());
+}
+
+}
+

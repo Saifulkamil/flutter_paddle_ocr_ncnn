@@ -15,6 +15,9 @@ class PPOCRv5Ncnn {
     external fun toggleFlash(): Boolean
     external fun takePhoto(savePath: String): String
     external fun getOcrText(): String
+    external fun ocrFromImage(imagePath: String): String
+    external fun setTargetRect(normW: Float, normH: Float): Boolean
+    external fun setPhotoMode(isPhoto: Boolean): Boolean
 
     companion object {
         init {

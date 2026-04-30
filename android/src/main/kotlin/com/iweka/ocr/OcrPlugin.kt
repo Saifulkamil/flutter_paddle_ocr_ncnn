@@ -1,17 +1,28 @@
 package com.iweka.ocr
 
+import android.app.Activity
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import io.flutter.embedding.engine.plugins.FlutterPlugin
+import io.flutter.embedding.engine.plugins.activity.ActivityAware
+import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
+import io.flutter.plugin.common.PluginRegistry
+import com.yalantis.ucrop.UCrop
+import java.io.File
 
 /** OcrPlugin */
-class OcrPlugin: FlutterPlugin, MethodCallHandler {
+class OcrPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, PluginRegistry.ActivityResultListener {
   private lateinit var channel : MethodChannel
   private lateinit var context: Context
+  private var activity: Activity? = null
   private val ppocrv5ncnn = PPOCRv5Ncnn()
+  
+  private var pendingCropResult: Result? = null
 
   override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
     context = flutterPluginBinding.applicationContext
@@ -21,6 +32,28 @@ class OcrPlugin: FlutterPlugin, MethodCallHandler {
     flutterPluginBinding.platformViewRegistry.registerViewFactory(
         "ocr_camera_view", OcrCameraViewFactory(ppocrv5ncnn)
     )
+  }
+
+  override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+    channel.setMethodCallHandler(null)
+  }
+
+  override fun onAttachedToActivity(binding: ActivityPluginBinding) {
+    activity = binding.activity
+    binding.addActivityResultListener(this)
+  }
+
+  override fun onDetachedFromActivityForConfigChanges() {
+    activity = null
+  }
+
+  override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
+    activity = binding.activity
+    binding.addActivityResultListener(this)
+  }
+
+  override fun onDetachedFromActivity() {
+    activity = null
   }
 
   override fun onMethodCall(call: MethodCall, result: Result) {
@@ -68,13 +101,67 @@ class OcrPlugin: FlutterPlugin, MethodCallHandler {
             val text = ppocrv5ncnn.getOcrText()
             result.success(text)
         }
+        "setTargetRect" -> {
+          val w = call.argument<Double>("w")?.toFloat() ?: 0f
+          val h = call.argument<Double>("h")?.toFloat() ?: 0f
+          val success = ppocrv5ncnn.setTargetRect(w, h)
+          result.success(success)
+        }
+        "setPhotoMode" -> {
+          val isPhoto = call.argument<Boolean>("isPhoto") ?: false
+          val success = ppocrv5ncnn.setPhotoMode(isPhoto)
+          result.success(success)
+        }
+        "ocrFromImage" -> {
+            val imagePath = call.argument<String>("imagePath") ?: ""
+            Thread {
+                val text = ppocrv5ncnn.ocrFromImage(imagePath)
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    result.success(text)
+                }
+            }.start()
+        }
+        "cropImage" -> {
+            val sourcePath = call.argument<String>("sourcePath") ?: ""
+            if (sourcePath.isEmpty() || activity == null) {
+                result.error("INVALID_CROP", "Source path is empty or Activity is null", null)
+                return
+            }
+            
+            pendingCropResult = result
+            
+            val sourceUri = Uri.fromFile(File(sourcePath))
+            val destFile = File(context.cacheDir, "cropped_${System.currentTimeMillis()}.jpg")
+            val destUri = Uri.fromFile(destFile)
+            
+            val uCrop = UCrop.of(sourceUri, destUri)
+                .withOptions(UCrop.Options().apply {
+                    setCompressionQuality(90)
+                    setFreeStyleCropEnabled(true)
+                })
+            
+            uCrop.start(activity!!)
+        }
         else -> {
             result.notImplemented()
         }
     }
   }
 
-  override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-    channel.setMethodCallHandler(null)
+  override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
+      if (requestCode == UCrop.REQUEST_CROP) {
+          if (resultCode == Activity.RESULT_OK && data != null) {
+              val resultUri = UCrop.getOutput(data)
+              pendingCropResult?.success(resultUri?.path)
+          } else if (resultCode == UCrop.RESULT_ERROR && data != null) {
+              val cropError = UCrop.getError(data)
+              pendingCropResult?.error("CROP_ERROR", cropError?.message, null)
+          } else {
+              pendingCropResult?.success(null) // Cancelled
+          }
+          pendingCropResult = null
+          return true
+      }
+      return false
   }
 }

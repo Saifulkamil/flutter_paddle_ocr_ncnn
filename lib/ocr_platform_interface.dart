@@ -68,4 +68,22 @@ abstract class OcrPlatform extends PlatformInterface {
   Future<String?> getOcrText() {
     throw UnimplementedError('getOcrText() has not been implemented.');
   }
+
+  Future<bool?> setTargetRect(double w, double h) {
+    throw UnimplementedError('setTargetRect() has not been implemented.');
+  }
+
+  Future<bool?> setPhotoMode(bool isPhoto) {
+    throw UnimplementedError('setPhotoMode() has not been implemented.');
+  }
+
+  /// Run OCR on a static image file. Returns recognized text.
+  Future<String?> ocrFromImage(String imagePath) {
+    throw UnimplementedError('ocrFromImage() has not been implemented.');
+  }
+
+  /// Launch native image cropper for the given image path. Returns the cropped image path.
+  Future<String?> cropImage(String sourcePath) {
+    throw UnimplementedError('cropImage() has not been implemented.');
+  }
 }

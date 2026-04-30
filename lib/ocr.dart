@@ -54,4 +54,26 @@ class Ocr {
   Future<String?> getOcrText() {
     return OcrPlatform.instance.getOcrText();
   }
+
+  /// Sets the normalized crop area for auto-cropping in Photo mode.
+  /// [w] and [h] should be between 0.0 and 1.0.
+  Future<bool?> setTargetRect(double w, double h) {
+    return OcrPlatform.instance.setTargetRect(w, h);
+  }
+
+  /// Sets whether the native camera is in Photo mode.
+  /// When true, continuous OCR is paused to save power and only runs on capture.
+  Future<bool?> setPhotoMode(bool isPhoto) {
+    return OcrPlatform.instance.setPhotoMode(isPhoto);
+  }
+
+  /// Run OCR on a static image file. Returns recognized text.
+  Future<String?> ocrFromImage(String imagePath) {
+    return OcrPlatform.instance.ocrFromImage(imagePath);
+  }
+
+  /// Launch native image cropper for the given image path. Returns the cropped image path.
+  Future<String?> cropImage(String sourcePath) {
+    return OcrPlatform.instance.cropImage(sourcePath);
+  }
 }

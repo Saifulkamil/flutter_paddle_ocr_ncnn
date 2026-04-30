@@ -65,7 +65,35 @@ class MethodChannelOcr extends OcrPlatform {
 
   @override
   Future<String?> getOcrText() async {
-    final result = await methodChannel.invokeMethod<String>('getOcrText');
+    final text = await methodChannel.invokeMethod<String>('getOcrText');
+    return text;
+  }
+
+  @override
+  Future<bool?> setTargetRect(double w, double h) async {
+    final success = await methodChannel.invokeMethod<bool>('setTargetRect', {'w': w, 'h': h});
+    return success;
+  }
+
+  @override
+  Future<bool?> setPhotoMode(bool isPhoto) async {
+    final success = await methodChannel.invokeMethod<bool>('setPhotoMode', {'isPhoto': isPhoto});
+    return success;
+  }
+
+  @override
+  Future<String?> ocrFromImage(String imagePath) async {
+    final result = await methodChannel.invokeMethod<String>('ocrFromImage', {
+      'imagePath': imagePath,
+    });
+    return result;
+  }
+
+  @override
+  Future<String?> cropImage(String sourcePath) async {
+    final result = await methodChannel.invokeMethod<String>('cropImage', {
+      'sourcePath': sourcePath,
+    });
     return result;
   }
 }

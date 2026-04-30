@@ -481,6 +481,10 @@ NdkCameraWindow::NdkCameraWindow() : NdkCamera()
 
     accelerometer_orientation = 0;
 
+    target_norm_w = 0.0f;
+    target_norm_h = 0.0f;
+    is_photo_mode = false;
+
     // sensor
     sensor_manager = ASensorManager_getInstance();
 
@@ -568,6 +572,19 @@ std::string NdkCameraWindow::get_ocr_text() const
 {
     ncnn::MutexLockGuard g(ocr_text_lock);
     return latest_ocr_text;
+}
+
+void NdkCameraWindow::set_target_rect(float norm_w, float norm_h)
+{
+    ncnn::MutexLockGuard g(capture_lock);
+    target_norm_w = norm_w;
+    target_norm_h = norm_h;
+}
+
+void NdkCameraWindow::set_photo_mode(bool photo_mode)
+{
+    ncnn::MutexLockGuard g(capture_lock);
+    is_photo_mode = photo_mode;
 }
 
 void NdkCameraWindow::on_image(const unsigned char* nv21, int nv21_width, int nv21_height) const

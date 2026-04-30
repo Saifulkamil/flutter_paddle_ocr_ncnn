@@ -85,6 +85,12 @@ public:
     void set_ocr_text(const std::string& text);
     std::string get_ocr_text() const;
 
+    // Auto Crop mapping
+    void set_target_rect(float w, float h);
+
+    // Photo Mode flag
+    void set_photo_mode(bool is_photo_mode);
+
 public:
     void proc_thread_loop();
 
@@ -95,6 +101,9 @@ public:
     mutable bool capture_requested;
     mutable std::string capture_save_path;
     mutable std::string captured_photo_path;
+    mutable float target_norm_w;
+    mutable float target_norm_h;
+    mutable bool is_photo_mode;
     mutable ncnn::Mutex capture_lock;
 
     // OCR text state
