@@ -15,6 +15,17 @@ This plugin supports real-time text scanning directly from the camera feed and c
 
 ---
 
+## 📱 Platform Support
+
+| Platform | Support | Note |
+| :--- | :---: | :--- |
+| **Android** | ✅ | Fully supported (Requires Android 7.0 / API 24+) |
+| **iOS** | ❌ | Not supported (Currently in development / Planned) |
+| **Web** | ❌ | Not supported |
+| **Desktop** | ❌ | Not supported |
+
+---
+
 ## ⚙️ Android Setup (Required)
 
 ### 1. Minimum SDK Version
