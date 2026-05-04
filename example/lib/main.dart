@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 
 import 'package:flutter/services.dart';
-import 'package:flutter_paddle_ocr_ncnn/ocr.dart';
-import 'package:flutter_paddle_ocr_ncnn/ocr_camera_view.dart';
+import 'package:fast_paddle_ocr/ocr.dart';
+import 'package:fast_paddle_ocr/ocr_camera_view.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:file_picker/file_picker.dart';

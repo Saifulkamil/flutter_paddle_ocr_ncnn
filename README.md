@@ -95,8 +95,8 @@ flutter:
 
 ### 1. Import the Plugin
 ```dart
-import 'package:flutter_paddle_ocr_ncnn/ocr.dart';
-import 'package:flutter_paddle_ocr_ncnn/ocr_camera_view.dart';
+import 'package:fast_paddle_ocr/ocr.dart';
+import 'package:fast_paddle_ocr/ocr_camera_view.dart';
 ```
 
 ### 2. Initialize and Load Model
