@@ -48,9 +48,15 @@ android {
     defaultConfig {
         minSdk = 24
 
+        ndk {
+            // Hanya build untuk ARM (HP pada umumnya), abaikan x86/x86_64 (Emulator)
+            abiFilters "arm64-v8a", "armeabi-v7a"
+        }
+
         externalNativeBuild {
             cmake {
                 arguments("-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON")
+                abiFilters "arm64-v8a", "armeabi-v7a"
             }
         }
     }

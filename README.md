@@ -1,33 +1,73 @@
-# Flutter Paddle OCR
+# Flutter Paddle OCR 📸
 
-A Flutter plugin for performing offline Optical Character Recognition (OCR) on Android using **PaddleOCR** and **NCNN**. This plugin supports real-time text scanning via the camera and capturing photos with immediate OCR text extraction.
+[![pub package](https://img.shields.io/pub/v/flutter_paddle_ocr.svg)](https://pub.dev/packages/flutter_paddle_ocr)
 
-## Key Features
-- **Real-time OCR**: Read and detect text directly from the camera preview.
-- **Photo Capture**: Save images from the camera along with the extracted OCR text.
-- **Offline / On-Device**: Uses local NCNN models, making the process extremely fast and requiring no internet connection.
-- **Camera Controls**: Supports camera switching (front/back) and flash (torch) control.
+A high-performance Flutter plugin for performing **offline Optical Character Recognition (OCR)** on Android using **PaddleOCR** and **NCNN**. 
+
+This plugin supports real-time text scanning directly from the camera feed and capturing photos with immediate, on-device OCR text extraction. It processes everything locally using C++ (NCNN), meaning it is **extremely fast** and requires **zero internet connection**.
+
+## ✨ Key Features
+- ⚡ **Real-time OCR**: Read and detect text instantly from the live camera preview.
+- 📸 **Photo Capture with OCR**: Save high-resolution images from the camera along with the extracted text.
+- 📴 **100% Offline**: Uses local NCNN models. No API calls or cloud dependencies.
+- 🎛️ **Camera Controls**: Seamlessly switch between front and back cameras and toggle the flash (torch).
+- 🔋 **Optimized for Mobile**: Leverages C++ and NDK for minimal latency and memory usage.
+
+---
+
+## ⚙️ Android Setup (Required)
+
+### 1. Minimum SDK Version
+Ensure your `android/app/build.gradle` has a `minSdkVersion` of at least `24`:
+```gradle
+android {
+    defaultConfig {
+        minSdkVersion 24
+    }
+}
+```
+
+### 2. Reduce APK Size (Crucial) 🚨
+By default, Flutter builds for multiple architectures. NCNN libraries can drastically increase your APK size if you build for all of them (including emulators). **To keep your APK size small**, filter the architectures to only physical ARM devices.
+
+Add `abiFilters` in your application's `android/app/build.gradle` (or `build.gradle.kts`):
+```kotlin
+android {
+    defaultConfig {
+        ndk {
+            // Only build for physical ARM devices, ignore x86/x86_64 (Emulators)
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
+    }
+}
+```
+
+### 3. Camera Permissions
+Add the camera permission to your `android/app/src/main/AndroidManifest.xml`:
+```xml
+<uses-permission android:name="android.permission.CAMERA" />
+<uses-feature android:name="android.hardware.camera" />
+```
+*(Make sure to also request permissions at runtime in your Flutter code using a package like `permission_handler`).*
 
 ---
 
 ## 🛠 Getting Started
 
 ### 1. Prepare NCNN Model Files
-This plugin requires 4 PaddleOCR model files that have been converted to NCNN format:
-- Detection Model: `det.ncnn.param` & `det.ncnn.bin`
-- Recognition Model: `rec.ncnn.param` & `rec.ncnn.bin`
+This plugin requires 4 PaddleOCR model files converted to the NCNN format:
+- **Detection Model**: `det.ncnn.param` & `det.ncnn.bin`
+- **Recognition Model**: `rec.ncnn.param` & `rec.ncnn.bin`
 
-Place these files inside the `assets/` folder of your Flutter project, and make sure to declare them in your `pubspec.yaml` file:
+Place these files inside the `assets/` folder of your Flutter project, and declare them in your `pubspec.yaml`:
 ```yaml
-assets:
-  - assets/det.ncnn.param
-  - assets/det.ncnn.bin
-  - assets/rec.ncnn.param
-  - assets/rec.ncnn.bin
+flutter:
+  assets:
+    - assets/det.ncnn.param
+    - assets/det.ncnn.bin
+    - assets/rec.ncnn.param
+    - assets/rec.ncnn.bin
 ```
-
-### 2. Camera Permission
-Your app needs camera access. Use a package like `permission_handler` to request permission before opening the camera.
 
 ---
 
@@ -91,8 +131,8 @@ Widget build(BuildContext context) {
 }
 ```
 
-### 4. Camera Controls (Open, Close, Flash, Switch)
-Once the model is loaded, you can control the camera.
+### 4. Camera Controls
+Once the model is loaded, you can control the camera:
 
 ```dart
 // Open camera (0 = Back Camera, 1 = Front Camera)
@@ -150,7 +190,8 @@ Future<void> captureImage() async {
 
 ---
 
-## 💡 Tips & Notes
-1. **Memory and Performance**: Always make sure to call `stopOcrPolling()` and `closeCamera()` inside the `dispose()` method of your `StatefulWidget` to prevent memory leaks.
-2. **Model Suitability**: Mobile/Lightweight PaddleOCR models are recommended. Heavier models require higher CPU/GPU resources.
-3. **Camera Quality**: Text will be detected more accurately with sufficient lighting. Use the `toggleFlash()` function in low-light conditions.
+## 💡 Tips & Best Practices
+1. **Memory Management**: Always ensure you call `stopOcrPolling()` and `closeCamera()` inside the `dispose()` method of your `StatefulWidget` to prevent memory leaks and camera lock-ups.
+2. **Model Choice**: Lightweight mobile PaddleOCR models (`ch_PP-OCRv3_det_opt`, etc.) are highly recommended. Heavier server-side models will require too much CPU/GPU overhead.
+3. **Lighting**: Text is detected much more accurately with good lighting. Hook up the `toggleFlash()` method to a flashlight button in your UI for low-light scanning.
+4. **GPU vs CPU**: If a device supports it, switching `cpugpu: 1` might speed up processing, but CPU is generally more stable across all Android devices.
