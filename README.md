@@ -53,7 +53,16 @@ android {
 }
 ```
 
-### 3. Camera Permissions
+### 3. Testing on Android Emulators (x86 / x86_64) 🖥️
+To keep this plugin lightweight for pub.dev, the massive `x86` and `x86_64` pre-compiled C++ libraries for NCNN and OpenCV have been removed. By default, you can only build and run this plugin on **physical Android devices** (ARM architectures).
+
+If you want to test your app on a PC Android Emulator, you need to manually restore these architectures:
+1. **Remove `abiFilters`**: Remove the `abiFilters` block shown in Step 2 from your app's `build.gradle`.
+2. **Download NCNN**: Go to [Tencent/ncnn releases](https://github.com/Tencent/ncnn/releases) and download the `ncnn-android-vulkan.zip`. Extract the `x86` and `x86_64` folders into your Flutter plugin directory at: `android/src/main/jni/ncnn-[version]-android-vulkan/`.
+3. **Download OpenCV Mobile**: Go to [nihui/opencv-mobile](https://github.com/nihui/opencv-mobile) and download the `opencv-mobile-android.zip`. Extract the `abi-x86` and `abi-x86_64` folders (both in `sdk/native/jni/` and `sdk/native/staticlibs/`) into your plugin directory at: `android/src/main/jni/opencv-mobile-[version]-android/`.
+4. Run `flutter clean` and build your app again.
+
+### 4. Camera Permissions
 Add the camera permission to your `android/app/src/main/AndroidManifest.xml`:
 ```xml
 <uses-permission android:name="android.permission.CAMERA" />
