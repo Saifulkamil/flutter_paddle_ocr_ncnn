@@ -842,6 +842,43 @@ void NdkCameraWindow::on_image(const unsigned char* nv21, int nv21_width, int nv
     cv::Mat rgb(roi_h, roi_w, CV_8UC3);
     ncnn::yuv420sp2rgb(nv21_croprotated.data, roi_w, roi_h, rgb.data);
 
+    // If capture is requested, save the FULL sensor frame (before ROI crop)
+    {
+        ncnn::MutexLockGuard cg(capture_lock);
+        if (capture_requested && full_capture_rgb.empty())
+        {
+            // Convert the full raw NV21 to RGB with rotation
+            int full_w = 0;
+            int full_h = 0;
+            int full_rotate_type = rotate_type;
+
+            if (rotate_type == 1 || rotate_type == 2 || rotate_type == 3 || rotate_type == 4)
+            {
+                full_w = nv21_width;
+                full_h = nv21_height;
+            }
+            else
+            {
+                full_w = nv21_height;
+                full_h = nv21_width;
+            }
+
+            cv::Mat nv21_full_rotated(full_h + full_h / 2, full_w, CV_8UC1);
+            ncnn::kanna_rotate_c1(nv21, nv21_width, nv21_height, nv21_width,
+                                  nv21_full_rotated.data, full_w, full_h, full_w, full_rotate_type);
+
+            const unsigned char* srcUV_full = nv21 + nv21_width * nv21_height;
+            unsigned char* dstUV_full = nv21_full_rotated.data + full_w * full_h;
+            ncnn::kanna_rotate_c2(srcUV_full, nv21_width / 2, nv21_height / 2, nv21_width,
+                                  dstUV_full, full_w / 2, full_h / 2, full_w, full_rotate_type);
+
+            full_capture_rgb = cv::Mat(full_h, full_w, CV_8UC3);
+            ncnn::yuv420sp2rgb(nv21_full_rotated.data, full_w, full_h, full_capture_rgb.data);
+
+            __android_log_print(ANDROID_LOG_DEBUG, "NdkCamera", "full_capture_rgb saved: %dx%d", full_w, full_h);
+        }
+    }
+
     // put latest rgb
     {
         ncnn::MutexLockGuard g(proc_lock);

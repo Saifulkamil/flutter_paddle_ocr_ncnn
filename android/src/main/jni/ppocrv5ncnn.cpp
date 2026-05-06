@@ -132,41 +132,42 @@ void MyNdkCamera::on_image_render(cv::Mat& rgb) const
         {
             if (is_photo_mode) 
             {
-                // In photo mode, don't run continuous OCR to save power.
-                // Just check if capture is requested.
+                // Check if capture is requested
                 ncnn::MutexLockGuard cg(capture_lock);
                 if (capture_requested)
                 {
-                    __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "[PhotoMode] capture_requested=true, target_norm_w=%.3f, target_norm_h=%.3f, rgb=%dx%d", 
-                                        target_norm_w, target_norm_h, rgb.cols, rgb.rows);
+                    // Use full_capture_rgb if available (full sensor frame, pre-ROI-crop)
+                    cv::Mat full_frame = full_capture_rgb.empty() ? rgb.clone() : full_capture_rgb.clone();
+                    __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "[PhotoMode] capture_requested=true, full_frame=%dx%d, rgb=%dx%d, target_norm_w=%.3f, target_norm_h=%.3f", 
+                                        full_frame.cols, full_frame.rows, rgb.cols, rgb.rows, target_norm_w, target_norm_h);
                     
-                    // 1. Save original full frame
+                    // 1. Save original full sensor frame
                     cv::Mat bgr_orig;
-                    cv::cvtColor(rgb, bgr_orig, cv::COLOR_RGB2BGR);
+                    cv::cvtColor(full_frame, bgr_orig, cv::COLOR_RGB2BGR);
                     cv::imwrite(capture_save_path, bgr_orig);
-                    __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "[PhotoMode] original saved to %s", capture_save_path.c_str());
+                    __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "[PhotoMode] original saved to %s (%dx%d)", capture_save_path.c_str(), bgr_orig.cols, bgr_orig.rows);
 
                     std::string cropped_path = "";
-                    cv::Mat final_rgb = rgb;
 
-                    // 2. Crop if target rect is defined
+                    // 2. Crop from rgb (matches preview/overlay) for OCR
                     if (target_norm_w > 0.0f && target_norm_h > 0.0f) 
                     {
+                        // Crop relative to rgb (the preview frame, matches overlay)
                         int crop_w = (int)(rgb.cols * target_norm_w);
                         int crop_h = (int)(rgb.rows * target_norm_h);
-                        __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "[PhotoMode] crop_w=%d, crop_h=%d", crop_w, crop_h);
+                        __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "[PhotoMode] crop_w=%d, crop_h=%d from rgb %dx%d", crop_w, crop_h, rgb.cols, rgb.rows);
                         
                         if (crop_w > 0 && crop_w <= rgb.cols && crop_h > 0 && crop_h <= rgb.rows) 
                         {
                             int crop_x = (rgb.cols - crop_w) / 2;
                             int crop_y = (rgb.rows - crop_h) / 2;
                             cv::Rect crop_region(crop_x, crop_y, crop_w, crop_h);
-                            final_rgb = rgb(crop_region).clone();
+                            cv::Mat crop_rgb = rgb(crop_region).clone();
                             __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "[PhotoMode] cropped region: x=%d y=%d w=%d h=%d", crop_x, crop_y, crop_w, crop_h);
 
-                            // 3. Run OCR specifically on the cropped image
+                            // 3. Run OCR on the cropped region
                             std::vector<Object> objects;
-                            g_ppocrv5->detect_and_recognize(final_rgb, objects);
+                            g_ppocrv5->detect_and_recognize(crop_rgb, objects);
                             __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "[PhotoMode] OCR found %d objects", (int)objects.size());
 
                             // 4. Extract text
@@ -191,12 +192,22 @@ void MyNdkCamera::on_image_render(cv::Mat& rgb) const
                             const_cast<MyNdkCamera*>(this)->set_ocr_text(all_text);
                             __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "[PhotoMode] OCR text length=%d", (int)all_text.length());
 
-                            // 5. Draw bounding boxes on the cropped image
-                            g_ppocrv5->draw(final_rgb, objects);
+                            // 5. Offset bbox: crop_in_rgb → rgb → full_frame
+                            // ROI offset: rgb is centered in full_frame
+                            int roi_offset_x = (full_frame.cols - rgb.cols) / 2;
+                            int roi_offset_y = (full_frame.rows - rgb.rows) / 2;
+                            for (size_t i = 0; i < objects.size(); i++)
+                            {
+                                objects[i].rrect.center.x += crop_x + roi_offset_x;
+                                objects[i].rrect.center.y += crop_y + roi_offset_y;
+                            }
 
-                            // 6. Save the cropped image (with bounding boxes)
-                            cv::Mat bgr_crop;
-                            cv::cvtColor(final_rgb, bgr_crop, cv::COLOR_RGB2BGR);
+                            // 6. Draw bounding boxes + text labels on the FULL sensor frame
+                            g_ppocrv5->draw(full_frame, objects);
+
+                            // 7. Save the full frame with bounding boxes
+                            cv::Mat bgr_full;
+                            cv::cvtColor(full_frame, bgr_full, cv::COLOR_RGB2BGR);
                             
                             size_t dot_pos = capture_save_path.find_last_of('.');
                             if (dot_pos != std::string::npos) {
@@ -204,12 +215,12 @@ void MyNdkCamera::on_image_render(cv::Mat& rgb) const
                             } else {
                                 cropped_path = capture_save_path + "_crop.jpg";
                             }
-                            cv::imwrite(cropped_path, bgr_crop);
-                            __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "[PhotoMode] crop saved to %s (%dx%d)", cropped_path.c_str(), bgr_crop.cols, bgr_crop.rows);
+                            cv::imwrite(cropped_path, bgr_full);
+                            __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "[PhotoMode] full frame with bbox saved to %s (%dx%d)", cropped_path.c_str(), bgr_full.cols, bgr_full.rows);
                         }
                         else
                         {
-                            __android_log_print(ANDROID_LOG_WARN, "ncnn", "[PhotoMode] crop dimensions invalid! crop_w=%d crop_h=%d vs rgb=%dx%d", crop_w, crop_h, rgb.cols, rgb.rows);
+                            __android_log_print(ANDROID_LOG_WARN, "ncnn", "[PhotoMode] crop dimensions invalid! crop_w=%d crop_h=%d vs full=%dx%d", crop_w, crop_h, full_frame.cols, full_frame.rows);
                         }
                     }
                     else
@@ -223,8 +234,28 @@ void MyNdkCamera::on_image_render(cv::Mat& rgb) const
                         captured_photo_path = capture_save_path;
                     }
                     
+                    // Clear the full capture frame
+                    const_cast<MyNdkCamera*>(this)->full_capture_rgb = cv::Mat();
                     capture_requested = false;
                     __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "[PhotoMode] captured_photo_path=%s", captured_photo_path.c_str());
+                }
+                else
+                {
+                    // Preview mode: detect-only (no recognition) to show bounding boxes
+                    std::vector<Object> objects;
+                    g_ppocrv5->detect(rgb, objects);
+
+                    // Draw bounding boxes only (no text labels since no recognition)
+                    static const cv::Scalar bbox_color(80, 175, 76); // green
+                    for (size_t i = 0; i < objects.size(); i++)
+                    {
+                        cv::Point2f corners[4];
+                        objects[i].rrect.points(corners);
+                        cv::line(rgb, corners[0], corners[1], bbox_color, 2);
+                        cv::line(rgb, corners[1], corners[2], bbox_color, 2);
+                        cv::line(rgb, corners[2], corners[3], bbox_color, 2);
+                        cv::line(rgb, corners[3], corners[0], bbox_color, 2);
+                    }
                 }
             }
             else 
@@ -518,6 +549,7 @@ JNIEXPORT jboolean JNICALL Java_com_iweka_ocr_PPOCRv5Ncnn_setPhotoMode(JNIEnv* e
 JNIEXPORT jstring JNICALL Java_com_iweka_ocr_PPOCRv5Ncnn_ocrFromImage(JNIEnv* env, jobject thiz, jstring imagePath)
 {
     const char* image_path = env->GetStringUTFChars(imagePath, nullptr);
+    std::string image_path_str(image_path);
 
     __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "ocrFromImage: %s", image_path);
 
@@ -567,6 +599,30 @@ JNIEXPORT jstring JNICALL Java_com_iweka_ocr_PPOCRv5Ncnn_ocrFromImage(JNIEnv* en
 
     __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "ocrFromImage: found %d objects, text length %d",
                         (int)objects.size(), (int)all_text.length());
+
+    // Draw bounding boxes + text labels on the image (same as realtime)
+    std::string bbox_path;
+    if (!objects.empty())
+    {
+        g_ppocrv5->draw(rgb, objects);
+
+        // Save annotated image as separate _bbox file (don't overwrite original)
+        size_t dot_pos = image_path_str.find_last_of('.');
+        if (dot_pos != std::string::npos)
+        {
+            bbox_path = image_path_str.substr(0, dot_pos) + "_bbox" + image_path_str.substr(dot_pos);
+        }
+        else
+        {
+            bbox_path = image_path_str + "_bbox.jpg";
+        }
+
+        cv::Mat bgr_out;
+        cv::cvtColor(rgb, bgr_out, cv::COLOR_RGB2BGR);
+        cv::imwrite(bbox_path, bgr_out);
+
+        __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "ocrFromImage: bbox saved to %s", bbox_path.c_str());
+    }
 
     return env->NewStringUTF(all_text.c_str());
 }

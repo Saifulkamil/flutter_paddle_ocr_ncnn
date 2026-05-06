@@ -104,6 +104,7 @@ public:
     mutable float target_norm_w;
     mutable float target_norm_h;
     mutable bool is_photo_mode;
+    mutable cv::Mat full_capture_rgb; // full sensor frame for photo capture
     mutable ncnn::Mutex capture_lock;
 
     // OCR text state

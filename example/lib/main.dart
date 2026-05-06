@@ -266,7 +266,7 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
 
       if (_mode == OcrMode.photo) {
         setState(() => _isLoadingModel = true); // use loading state for UI
-        
+
         // Ensure target rect is set before capture
         // Use the known overlay dimensions vs the camera area
         final screenW = MediaQuery.of(context).size.width;
@@ -275,32 +275,32 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
         final normH = 220.0 / 300.0; // safe approximate ratio
         debugPrint('[PhotoMode] setTargetRect normW=$normW, normH=$normH');
         await _ocrPlugin.setTargetRect(normW, normH);
-        
+
         final resultPaths = await _ocrPlugin.takePhoto(savePath);
         debugPrint('[PhotoMode] takePhoto result: $resultPaths');
-        
+
         if (resultPaths != null && resultPaths.isNotEmpty) {
           final paths = resultPaths.split('|');
           final origPath = paths[0];
           final cropPath = paths.length > 1 ? paths[1] : '';
           debugPrint('[PhotoMode] origPath=$origPath, cropPath=$cropPath');
-          
+
           // Try getOcrText first (set during native capture)
           String text = await _ocrPlugin.getOcrText() ?? '';
           debugPrint('[PhotoMode] getOcrText: "$text"');
-          
-          // If no text from native capture, run ocrFromImage on cropped file as fallback
-          if (text.isEmpty && cropPath.isNotEmpty) {
-            debugPrint('[PhotoMode] fallback: ocrFromImage on cropPath');
-            text = await _ocrPlugin.ocrFromImage(cropPath) ?? '';
-          }
-          // If still no text and no crop, try on original
+
+          // If no text from native capture, fallback: run ocrFromImage on original
           if (text.isEmpty) {
             debugPrint('[PhotoMode] fallback: ocrFromImage on origPath');
             text = await _ocrPlugin.ocrFromImage(origPath) ?? '';
           }
 
-          final capture = OcrCapture(photoPath: origPath, croppedPath: cropPath, ocrText: text, timestamp: DateTime.now());
+          final capture = OcrCapture(
+            photoPath: origPath,
+            croppedPath: cropPath,
+            ocrText: text,
+            timestamp: DateTime.now(),
+          );
           setState(() {
             _latestCapture = capture;
             _captureHistory.insert(0, capture);
@@ -347,9 +347,13 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text("Hasil Auto-Crop & OCR", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+              const Text(
+                "Hasil Auto-Crop & OCR",
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
               const SizedBox(height: 16),
-              
+
               // Gambar
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -359,9 +363,12 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
                       children: [
                         const Text("Gambar Asli", style: TextStyle(fontSize: 12, color: Colors.black54)),
                         const SizedBox(height: 4),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Image.file(File(capture.photoPath), height: 140, fit: BoxFit.cover),
+                        GestureDetector(
+                          onTap: () => _openFullScreenImage(context, capture.photoPath, "Gambar Asli"),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.file(File(capture.photoPath), height: 140, fit: BoxFit.cover),
+                          ),
                         ),
                       ],
                     ),
@@ -371,11 +378,14 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
                     Expanded(
                       child: Column(
                         children: [
-                          const Text("Hasil Crop", style: TextStyle(fontSize: 12, color: Colors.black54)),
+                          const Text("Hasil OCR", style: TextStyle(fontSize: 12, color: Colors.black54)),
                           const SizedBox(height: 4),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: Image.file(File(capture.croppedPath), height: 140, fit: BoxFit.cover),
+                          GestureDetector(
+                            onTap: () => _openFullScreenImage(context, capture.croppedPath, "Hasil OCR"),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.file(File(capture.croppedPath), height: 140, fit: BoxFit.contain),
+                            ),
                           ),
                         ],
                       ),
@@ -383,7 +393,7 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
                   ],
                 ],
               ),
-              
+
               const SizedBox(height: 16),
               Container(
                 padding: const EdgeInsets.all(12),
@@ -399,10 +409,36 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
               const SizedBox(height: 20),
               ElevatedButton(
                 onPressed: () => Navigator.pop(context),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.green, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
                 child: const Text("Tutup", style: TextStyle(color: Colors.white)),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openFullScreenImage(BuildContext ctx, String imagePath, String title) {
+    Navigator.of(ctx).push(
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            foregroundColor: Colors.white,
+            title: Text(title, style: const TextStyle(fontSize: 16)),
+            elevation: 0,
+          ),
+          body: Center(
+            child: InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 5.0,
+              child: Image.file(File(imagePath), fit: BoxFit.contain),
+            ),
           ),
         ),
       ),
@@ -479,9 +515,8 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
               alignment: Alignment.center,
               children: [
                 // 1. Camera preview filling the container
-                if (_cameraOpen && !_showPreview)
-                  const Positioned.fill(child: OcrCameraView()),
-                
+                if (_cameraOpen && !_showPreview) const Positioned.fill(child: OcrCameraView()),
+
                 // 2. Corner brackets as an overlay in the center
                 if (_cameraOpen && !_showPreview)
                   CustomPaint(
@@ -500,17 +535,17 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
                     color: Colors.grey[200],
                     child: Center(
                       child: Icon(
-                        _mode == OcrMode.photo ? Icons.image_outlined : Icons.videocam_off_rounded, 
-                        size: 48, 
-                        color: Colors.black26
-                      )
+                        _mode == OcrMode.photo ? Icons.image_outlined : Icons.videocam_off_rounded,
+                        size: 48,
+                        color: Colors.black26,
+                      ),
                     ),
                   ),
               ],
             ),
           ),
         );
-      }
+      },
     );
   }
 
@@ -548,7 +583,7 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
                             decoration: BoxDecoration(
                               color: _mode == OcrMode.realtime ? Colors.white : Colors.transparent,
                               borderRadius: BorderRadius.circular(8),
-                              boxShadow: _mode == OcrMode.realtime 
+                              boxShadow: _mode == OcrMode.realtime
                                   ? [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4)]
                                   : null,
                             ),
@@ -577,7 +612,7 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
                             decoration: BoxDecoration(
                               color: _mode == OcrMode.photo ? Colors.white : Colors.transparent,
                               borderRadius: BorderRadius.circular(8),
-                              boxShadow: _mode == OcrMode.photo 
+                              boxShadow: _mode == OcrMode.photo
                                   ? [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4)]
                                   : null,
                             ),
@@ -599,12 +634,16 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
 
                 // Title
                 Text(
-                  _mode == OcrMode.photo ? "Ambil Foto untuk Di-Crop" : (_showPreview ? "Hasil Foto" : "Arahkan kamera ke teks"),
+                  _mode == OcrMode.photo
+                      ? "Ambil Foto untuk Di-Crop"
+                      : (_showPreview ? "Hasil Foto" : "Arahkan kamera ke teks"),
                   style: const TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  _mode == OcrMode.photo ? "Pilih dari galeri atau kamera" : (_showPreview ? "Tekan foto lagi untuk scan baru" : "Pastikan teks berada di dalam area"),
+                  _mode == OcrMode.photo
+                      ? "Pilih dari galeri atau kamera"
+                      : (_showPreview ? "Tekan foto lagi untuk scan baru" : "Pastikan teks berada di dalam area"),
                   style: const TextStyle(color: Colors.black45, fontSize: 13),
                 ),
 
@@ -743,12 +782,14 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
                     child: ElevatedButton.icon(
                       onPressed: _cameraOpen ? _captureImage : null,
                       icon: Icon(
-                        _mode == OcrMode.photo ? Icons.add_photo_alternate_rounded : (_showPreview ? Icons.camera_alt_outlined : Icons.camera_alt_rounded), 
-                        size: 20
+                        _mode == OcrMode.photo
+                            ? Icons.add_photo_alternate_rounded
+                            : (_showPreview ? Icons.camera_alt_outlined : Icons.camera_alt_rounded),
+                        size: 20,
                       ),
                       label: Text(
-                        _mode == OcrMode.photo ? "Ambil Foto" : (_showPreview ? "Foto Baru" : "Ambil Gambar"), 
-                        style: const TextStyle(fontSize: 15)
+                        _mode == OcrMode.photo ? "Ambil Foto" : (_showPreview ? "Foto Baru" : "Ambil Gambar"),
+                        style: const TextStyle(fontSize: 15),
                       ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green,

@@ -530,8 +530,24 @@ int PPOCRv5::draw(cv::Mat& rgb, const std::vector<Object>& objects)
             }
         }
 
-        int x = obj.rrect.center.x - label_size.width / 2;
-        int y = obj.rrect.center.y - label_size.height / 2 - baseLine;
+        // Position text ABOVE the bounding box (not inside)
+        // Find the topmost Y and leftmost X of the 4 corners
+        cv::Point2f corners[4];
+        obj.rrect.points(corners);
+
+        float min_y = corners[0].y;
+        float min_x = corners[0].x;
+        for (int c = 1; c < 4; c++)
+        {
+            if (corners[c].y < min_y) min_y = corners[c].y;
+            if (corners[c].x < min_x) min_x = corners[c].x;
+        }
+
+        const int padding = 2;
+        int x = (int)min_x;
+        int y = (int)min_y - label_size.height - baseLine - padding;
+
+        // Clamp to image bounds
         if (y < 0)
             y = 0;
         if (y + label_size.height > rgb.rows)
