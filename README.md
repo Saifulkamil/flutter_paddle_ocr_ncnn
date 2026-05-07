@@ -20,13 +20,56 @@ This plugin supports real-time text scanning directly from the camera feed, phot
 - 🖼️ **Full Sensor Frame Capture**: Saved images use the complete camera resolution, not the preview crop.
 - 📴 **100% Offline**: Uses local NCNN models. No API calls or cloud dependencies.
 
+
+
 ---
 
 ## 🎥 Demo
 
-*(Demo video will be uploaded here soon)*
+Experience the plugin in action! *(Replace the placeholder links below with your uploaded media)*
+
+### 📹 Video Demonstrations
+
+<table align="center">
+  <tr>
+    <td align="center"><b>Real-Time Tracking & OCR</b></td>
+    <td align="center"><b>Photo Mode (Auto-Crop)</b></td>
+  </tr>
+  <tr>
+    <td align="center">
+      <!-- REPLACE THIS LINK WITH YOUR REALTIME VIDEO -->
+         <a href="#">
+          <video src="https://github.com/user-attachments/assets/08221d92-b981-4315-ab59-4c61f2237e05" alt="Realtime Video Demo" width="250"" controls></video></a>
+    </td>
+    <td align="center">
+      <!-- REPLACE THIS LINK WITH YOUR PHOTO MODE VIDEO -->
+          <a href="#">
+          <video src="https://github.com/user-attachments/assets/ba8db6cd-767a-4278-9271-81370ac13844" alt="Realtime Video Demo" width="250"" controls></video></a>
+    </td>
+  </tr>
+</table>
+
+### 📸 Screenshots
+
+<table align="center">
+  <tr>
+    <td align="center"><b>Real-Time Scan UI</b></td>
+    <td align="center"><b>Photo Capture Result</b></td>
+  </tr>
+  <tr>
+    <td align="center">
+      <!-- REPLACE THE SRC BELOW WITH YOUR REALTIME IMAGE -->
+      <img src="https://github.com/user-attachments/assets/3251891a-7306-42f2-ba0b-0403e497a091" alt="Realtime OCR Interface" width="250">
+    </td>
+    <td align="center">
+      <!-- REPLACE THE SRC BELOW WITH YOUR PHOTO MODE IMAGE -->
+      <img src="https://github.com/user-attachments/assets/74dbfe35-3bbf-4de7-883a-e82a8297c123" alt="Photo Capture Result" width="250">
+    </td>
+  </tr>
+</table>
 
 ---
+ 
 
 ## 📱 Platform Support
 
