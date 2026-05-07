@@ -1,3 +1,13 @@
+## 0.0.5
+
+- Massive performance optimization: Decoupled camera rendering from OCR processing to guarantee smooth 60 FPS preview.
+- Advanced Dual-Thread Architecture: Separated Detection (DBNet) and Recognition (CRNN) into dedicated background threads.
+- Introduced IoU (Intersection over Union) Bounding Box Tracker for ultra-fast 15-20 FPS box responsiveness.
+- Extreme battery & thermal efficiency: Throttled the heavy Recognition model to ~3 FPS while maintaining fluid UI.
+- Smart Dynamic CPU Allocation: NCNN threads are automatically distributed based on device core count (30:70 ratio).
+- Native C++ Text Filtering: Automatically cleans OCR output to strictly alphanumeric characters and dots.
+- License updated to Creative Commons Legal Code.
+
 ## 0.0.4
 
 - Added detect-only bounding box preview in photo mode (no OCR until capture).

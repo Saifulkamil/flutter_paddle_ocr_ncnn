@@ -21,6 +21,7 @@ class OcrPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, PluginRegistry
   private lateinit var context: Context
   private var activity: Activity? = null
   private val ppocrv5ncnn = PPOCRv5Ncnn()
+  private val ocrExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
   
   private var pendingCropResult: Result? = null
 
@@ -36,6 +37,7 @@ class OcrPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, PluginRegistry
 
   override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
     channel.setMethodCallHandler(null)
+    ocrExecutor.shutdownNow()
   }
 
   override fun onAttachedToActivity(binding: ActivityPluginBinding) {
@@ -90,12 +92,18 @@ class OcrPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, PluginRegistry
                 result.error("INVALID_PATH", "savePath is required", null)
                 return
             }
-            Thread {
-                val photoPath = ppocrv5ncnn.takePhoto(savePath)
-                android.os.Handler(android.os.Looper.getMainLooper()).post {
-                    result.success(photoPath)
+            ocrExecutor.submit {
+                try {
+                    val photoPath = ppocrv5ncnn.takePhoto(savePath)
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        result.success(photoPath)
+                    }
+                } catch (e: Exception) {
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        result.error("PHOTO_ERROR", e.message, null)
+                    }
                 }
-            }.start()
+            }
         }
         "getOcrText" -> {
             val text = ppocrv5ncnn.getOcrText()
@@ -114,12 +122,18 @@ class OcrPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, PluginRegistry
         }
         "ocrFromImage" -> {
             val imagePath = call.argument<String>("imagePath") ?: ""
-            Thread {
-                val text = ppocrv5ncnn.ocrFromImage(imagePath)
-                android.os.Handler(android.os.Looper.getMainLooper()).post {
-                    result.success(text)
+            ocrExecutor.submit {
+                try {
+                    val text = ppocrv5ncnn.ocrFromImage(imagePath)
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        result.success(text)
+                    }
+                } catch (e: Exception) {
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        result.error("OCR_ERROR", e.message, null)
+                    }
                 }
-            }.start()
+            }
         }
         "cropImage" -> {
             val sourcePath = call.argument<String>("sourcePath") ?: ""

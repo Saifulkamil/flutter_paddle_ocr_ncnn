@@ -21,6 +21,9 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
+#include <android/log.h>
+#include <algorithm>
+
 #include "ppocrv5_dict.h"
 
 #include "myfontface.h"
@@ -139,6 +142,16 @@ int PPOCRv5::load(const char* det_parampath, const char* det_modelpath, const ch
     ppocrv5_det.clear();
     ppocrv5_rec.clear();
 
+    int total_cores = ncnn::get_cpu_count();
+    int usable_threads = std::max(1, total_cores - 1);
+    int det_threads = std::max(1, (int)(usable_threads * 0.30f));
+    int rec_threads = std::max(1, (int)(usable_threads * 0.70f));
+
+    __android_log_print(ANDROID_LOG_INFO, "PaddleOCR",
+        "CPU cores: %d | usable: %d | det_threads: %d | rec_threads: %d",
+        total_cores, usable_threads, det_threads, rec_threads);
+
+    ppocrv5_det.opt.num_threads = det_threads;
     ppocrv5_det.opt.use_fp16_packed = use_fp16;
     ppocrv5_det.opt.use_fp16_storage = use_fp16;
     ppocrv5_det.opt.use_fp16_arithmetic = use_fp16;
@@ -150,8 +163,7 @@ int PPOCRv5::load(const char* det_parampath, const char* det_modelpath, const ch
     ppocrv5_det.load_param(det_parampath);
     ppocrv5_det.load_model(det_modelpath);
 
-    // default to 1 thread, as we rec multiple lines in parallel
-    ppocrv5_rec.opt.num_threads = 1;
+    ppocrv5_rec.opt.num_threads = rec_threads;
 
     ppocrv5_rec.opt.use_fp16_packed = use_fp16;
     ppocrv5_rec.opt.use_fp16_storage = use_fp16;
@@ -172,6 +184,16 @@ int PPOCRv5::load(AAssetManager* mgr, const char* det_parampath, const char* det
     ppocrv5_det.clear();
     ppocrv5_rec.clear();
 
+    int total_cores = ncnn::get_cpu_count();
+    int usable_threads = std::max(1, total_cores - 1);
+    int det_threads = std::max(1, (int)(usable_threads * 0.30f));
+    int rec_threads = std::max(1, (int)(usable_threads * 0.70f));
+
+    __android_log_print(ANDROID_LOG_INFO, "PaddleOCR",
+        "CPU cores: %d | usable: %d | det_threads: %d | rec_threads: %d",
+        total_cores, usable_threads, det_threads, rec_threads);
+
+    ppocrv5_det.opt.num_threads = det_threads;
     ppocrv5_det.opt.use_fp16_packed = use_fp16;
     ppocrv5_det.opt.use_fp16_storage = use_fp16;
     ppocrv5_det.opt.use_fp16_arithmetic = use_fp16;
@@ -183,8 +205,7 @@ int PPOCRv5::load(AAssetManager* mgr, const char* det_parampath, const char* det
     ppocrv5_det.load_param(mgr, det_parampath);
     ppocrv5_det.load_model(mgr, det_modelpath);
 
-    // default to 1 thread, as we rec multiple lines in parallel
-    ppocrv5_rec.opt.num_threads = 1;
+    ppocrv5_rec.opt.num_threads = rec_threads;
 
     ppocrv5_rec.opt.use_fp16_packed = use_fp16;
     ppocrv5_rec.opt.use_fp16_storage = use_fp16;
@@ -491,15 +512,25 @@ int PPOCRv5::draw(cv::Mat& rgb, const std::vector<Object>& objects)
                 continue;
             }
 
-            if (obj.orientation == 0)
-            {
-                text += character_dict[ch.id];
-            }
-            else
-            {
-                text += character_dict[ch.id];
-                if (j + 1 < objects[i].text.size())
-                    text += "\n";
+            std::string c_str = character_dict[ch.id];
+            if (c_str.length() == 1) {
+                char c = c_str[0];
+                if ((c >= '0' && c <= '9') || 
+                    (c >= 'A' && c <= 'Z') || 
+                    (c >= 'a' && c <= 'z') || 
+                    c == '.') 
+                {
+                    if (obj.orientation == 0)
+                    {
+                        text += c;
+                    }
+                    else
+                    {
+                        text += c;
+                        if (j + 1 < objects[i].text.size())
+                            text += "\n";
+                    }
+                }
             }
         }
 

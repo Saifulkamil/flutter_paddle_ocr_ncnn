@@ -40,6 +40,19 @@
 #include <arm_neon.h>
 #endif // __ARM_NEON
 
+#include <atomic>
+#include <sys/time.h>
+
+static std::atomic<bool> is_ocr_processing(false);
+static std::atomic<long long> last_ocr_timestamp(0LL);
+static const long long OCR_THROTTLE_MS = 400LL;
+
+static long long get_current_time_ms() {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec * 1000LL + tv.tv_usec / 1000;
+}
+
 static int draw_unsupported(cv::Mat& rgb)
 {
     const char text[] = "unsupported";
@@ -116,15 +129,260 @@ static int draw_fps(cv::Mat& rgb)
 static PPOCRv5* g_ppocrv5 = 0;
 static ncnn::Mutex lock;
 
+static float compute_iou(const cv::RotatedRect& a, const cv::RotatedRect& b) {
+    cv::Rect rect_a = a.boundingRect();
+    cv::Rect rect_b = b.boundingRect();
+    
+    int x1 = std::max(rect_a.x, rect_b.x);
+    int y1 = std::max(rect_a.y, rect_b.y);
+    int x2 = std::min(rect_a.x + rect_a.width, rect_b.x + rect_b.width);
+    int y2 = std::min(rect_a.y + rect_a.height, rect_b.y + rect_b.height);
+    
+    if (x2 <= x1 || y2 <= y1) return 0.0f;
+    
+    float intersection = (x2 - x1) * (y2 - y1);
+    float area_a = rect_a.width * rect_a.height;
+    float area_b = rect_b.width * rect_b.height;
+    
+    return intersection / (area_a + area_b - intersection);
+}
+
+class MyNdkCamera;
+static void* onDetProcess(void* args);
+static void* onRecProcess(void* args);
+
 class MyNdkCamera : public NdkCameraWindow
 {
 public:
+    MyNdkCamera();
+    virtual ~MyNdkCamera();
+
     virtual void on_image_render(cv::Mat& rgb) const;
+
+    void det_thread_loop();
+    void rec_thread_loop();
+
+private:
+    mutable cv::Mat det_latest_rgb;
+    mutable ncnn::Mutex det_lock;
+    mutable ncnn::ConditionVariable det_condition;
+    bool det_exiting;
+    ncnn::Thread* det_thread;
+
+    mutable cv::Mat rec_latest_rgb;
+    mutable std::vector<Object> rec_pending_objects;
+    mutable ncnn::Mutex rec_lock;
+    mutable ncnn::ConditionVariable rec_condition;
+    bool rec_exiting;
+    ncnn::Thread* rec_thread;
+
+    mutable std::vector<Object> latest_boxes;
+    mutable ncnn::Mutex latest_boxes_lock;
+
+    mutable std::vector<Object> latest_texts;
+    mutable ncnn::Mutex latest_texts_lock;
 };
+
+static void* onDetProcess(void* args)
+{
+    MyNdkCamera* self = (MyNdkCamera*)args;
+    self->det_thread_loop();
+    return 0;
+}
+
+static void* onRecProcess(void* args)
+{
+    MyNdkCamera* self = (MyNdkCamera*)args;
+    self->rec_thread_loop();
+    return 0;
+}
+
+MyNdkCamera::MyNdkCamera()
+{
+    det_exiting = false;
+    rec_exiting = false;
+    det_thread = new ncnn::Thread(onDetProcess, (void*)this);
+    rec_thread = new ncnn::Thread(onRecProcess, (void*)this);
+}
+
+MyNdkCamera::~MyNdkCamera()
+{
+    det_exiting = true;
+    det_condition.signal();
+    det_thread->join();
+    delete det_thread;
+
+    rec_exiting = true;
+    rec_condition.signal();
+    rec_thread->join();
+    delete rec_thread;
+}
+
+void MyNdkCamera::det_thread_loop()
+{
+    while (!det_exiting)
+    {
+        cv::Mat rgb;
+        {
+            ncnn::MutexLockGuard g(det_lock);
+            while (det_latest_rgb.empty() && !det_exiting)
+            {
+                det_condition.wait(det_lock);
+            }
+            if (det_exiting) break;
+
+            rgb = det_latest_rgb;
+            det_latest_rgb = cv::Mat();
+        }
+
+        if (rgb.empty()) continue;
+
+        std::vector<Object> objects;
+        {
+            ncnn::MutexLockGuard g(lock);
+            if (g_ppocrv5)
+            {
+                g_ppocrv5->detect(rgb, objects);
+            }
+        }
+
+        {
+            ncnn::MutexLockGuard g(latest_boxes_lock);
+            latest_boxes = objects;
+        }
+
+        if (!is_photo_mode && g_ppocrv5)
+        {
+            ncnn::MutexLockGuard g(rec_lock);
+            if (rec_latest_rgb.empty())
+            {
+                rec_latest_rgb = rgb; // passed to Rec thread
+                rec_pending_objects = objects;
+                rec_condition.signal();
+            }
+        }
+
+        ncnn::sleep(10);
+    }
+}
+
+void MyNdkCamera::rec_thread_loop()
+{
+    while (!rec_exiting)
+    {
+        cv::Mat rgb;
+        std::vector<Object> objects;
+        {
+            ncnn::MutexLockGuard g(rec_lock);
+            while (rec_latest_rgb.empty() && !rec_exiting)
+            {
+                rec_condition.wait(rec_lock);
+            }
+            if (rec_exiting) break;
+
+            rgb = rec_latest_rgb;
+            objects = rec_pending_objects;
+            rec_latest_rgb = cv::Mat();
+            rec_pending_objects.clear();
+        }
+
+        if (rgb.empty() || objects.empty()) continue;
+
+        std::string all_text;
+        {
+            ncnn::MutexLockGuard g(lock);
+            if (g_ppocrv5)
+            {
+                for (size_t i = 0; i < objects.size(); i++)
+                {
+                    g_ppocrv5->recognize(rgb, objects[i]);
+
+                    std::string line_text;
+                    for (size_t j = 0; j < objects[i].text.size(); j++)
+                    {
+                        const Character& ch = objects[i].text[j];
+                        if (ch.id >= 0 && ch.id < character_dict_size)
+                        {
+                            std::string c_str = character_dict[ch.id];
+                            if (c_str.length() == 1) {
+                                char c = c_str[0];
+                                if ((c >= '0' && c <= '9') || 
+                                    (c >= 'A' && c <= 'Z') || 
+                                    (c >= 'a' && c <= 'z') || 
+                                    c == '.') 
+                                {
+                                    line_text += c;
+                                }
+                            }
+                        }
+                    }
+                    if (!line_text.empty())
+                    {
+                        if (!all_text.empty()) all_text += "\n";
+                        all_text += line_text;
+                    }
+                }
+            }
+        }
+
+        const_cast<MyNdkCamera*>(this)->set_ocr_text(all_text);
+
+        {
+            ncnn::MutexLockGuard g(latest_texts_lock);
+            latest_texts = objects;
+        }
+
+        ncnn::sleep(300);
+    }
+}
 
 void MyNdkCamera::on_image_render(cv::Mat& rgb) const
 {
-    // ppocrv5
+    // 1. Feed latest frame to Det thread
+    {
+        ncnn::MutexLockGuard g(det_lock);
+        if (det_latest_rgb.empty()) {
+            det_latest_rgb = rgb.clone();
+            det_condition.signal();
+        }
+    }
+
+    // 2. Fetch latest objects
+    std::vector<Object> current_objects;
+    {
+        ncnn::MutexLockGuard g(latest_boxes_lock);
+        current_objects = latest_boxes;
+    }
+
+    if (!is_photo_mode)
+    {
+        std::vector<Object> current_texts;
+        {
+            ncnn::MutexLockGuard g(latest_texts_lock);
+            current_texts = latest_texts;
+        }
+
+        // 3. IoU Tracker: Gabungkan latest_boxes + latest_texts
+        for (size_t i = 0; i < current_objects.size(); i++)
+        {
+            float max_iou = 0.0f;
+            int best_idx = -1;
+            for (size_t j = 0; j < current_texts.size(); j++)
+            {
+                float iou = compute_iou(current_objects[i].rrect, current_texts[j].rrect);
+                if (iou > max_iou) {
+                    max_iou = iou;
+                    best_idx = j;
+                }
+            }
+            if (best_idx != -1 && max_iou > 0.3f) 
+            {
+                current_objects[i].text = current_texts[best_idx].text;
+            }
+        }
+    }
+
+    // 4. Draw objects and handle screen capture (Render Thread)
     {
         ncnn::MutexLockGuard g(lock);
 
@@ -132,30 +390,34 @@ void MyNdkCamera::on_image_render(cv::Mat& rgb) const
         {
             if (is_photo_mode) 
             {
-                // Check if capture is requested
+                // Draw bounding boxes only for preview
+                static const cv::Scalar bbox_color(80, 175, 76); // green
+                for (size_t i = 0; i < current_objects.size(); i++)
+                {
+                    cv::Point2f corners[4];
+                    current_objects[i].rrect.points(corners);
+                    cv::line(rgb, corners[0], corners[1], bbox_color, 2);
+                    cv::line(rgb, corners[1], corners[2], bbox_color, 2);
+                    cv::line(rgb, corners[2], corners[3], bbox_color, 2);
+                    cv::line(rgb, corners[3], corners[0], bbox_color, 2);
+                }
+
+                // Handle exact photo capture request
                 ncnn::MutexLockGuard cg(capture_lock);
                 if (capture_requested)
                 {
-                    // Use full_capture_rgb if available (full sensor frame, pre-ROI-crop)
                     cv::Mat full_frame = full_capture_rgb.empty() ? rgb.clone() : full_capture_rgb.clone();
-                    __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "[PhotoMode] capture_requested=true, full_frame=%dx%d, rgb=%dx%d, target_norm_w=%.3f, target_norm_h=%.3f", 
-                                        full_frame.cols, full_frame.rows, rgb.cols, rgb.rows, target_norm_w, target_norm_h);
                     
-                    // 1. Save original full sensor frame
                     cv::Mat bgr_orig;
                     cv::cvtColor(full_frame, bgr_orig, cv::COLOR_RGB2BGR);
                     cv::imwrite(capture_save_path, bgr_orig);
-                    __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "[PhotoMode] original saved to %s (%dx%d)", capture_save_path.c_str(), bgr_orig.cols, bgr_orig.rows);
 
                     std::string cropped_path = "";
 
-                    // 2. Crop from rgb (matches preview/overlay) for OCR
                     if (target_norm_w > 0.0f && target_norm_h > 0.0f) 
                     {
-                        // Crop relative to rgb (the preview frame, matches overlay)
                         int crop_w = (int)(rgb.cols * target_norm_w);
                         int crop_h = (int)(rgb.rows * target_norm_h);
-                        __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "[PhotoMode] crop_w=%d, crop_h=%d from rgb %dx%d", crop_w, crop_h, rgb.cols, rgb.rows);
                         
                         if (crop_w > 0 && crop_w <= rgb.cols && crop_h > 0 && crop_h <= rgb.rows) 
                         {
@@ -163,24 +425,31 @@ void MyNdkCamera::on_image_render(cv::Mat& rgb) const
                             int crop_y = (rgb.rows - crop_h) / 2;
                             cv::Rect crop_region(crop_x, crop_y, crop_w, crop_h);
                             cv::Mat crop_rgb = rgb(crop_region).clone();
-                            __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "[PhotoMode] cropped region: x=%d y=%d w=%d h=%d", crop_x, crop_y, crop_w, crop_h);
 
-                            // 3. Run OCR on the cropped region
-                            std::vector<Object> objects;
-                            g_ppocrv5->detect_and_recognize(crop_rgb, objects);
-                            __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "[PhotoMode] OCR found %d objects", (int)objects.size());
+                            // Force synchronous high-quality OCR for the final captured cropped image
+                            std::vector<Object> capture_objects;
+                            g_ppocrv5->detect_and_recognize(crop_rgb, capture_objects);
 
-                            // 4. Extract text
                             std::string all_text;
-                            for (size_t i = 0; i < objects.size(); i++)
+                            for (size_t i = 0; i < capture_objects.size(); i++)
                             {
                                 std::string line_text;
-                                for (size_t j = 0; j < objects[i].text.size(); j++)
+                                for (size_t j = 0; j < capture_objects[i].text.size(); j++)
                                 {
-                                    const Character& ch = objects[i].text[j];
+                                    const Character& ch = capture_objects[i].text[j];
                                     if (ch.id >= 0 && ch.id < character_dict_size)
                                     {
-                                        line_text += character_dict[ch.id];
+                                        std::string c_str = character_dict[ch.id];
+                                        if (c_str.length() == 1) {
+                                            char c = c_str[0];
+                                            if ((c >= '0' && c <= '9') || 
+                                                (c >= 'A' && c <= 'Z') || 
+                                                (c >= 'a' && c <= 'z') || 
+                                                c == '.') 
+                                            {
+                                                line_text += c;
+                                            }
+                                        }
                                     }
                                 }
                                 if (!line_text.empty())
@@ -190,22 +459,17 @@ void MyNdkCamera::on_image_render(cv::Mat& rgb) const
                                 }
                             }
                             const_cast<MyNdkCamera*>(this)->set_ocr_text(all_text);
-                            __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "[PhotoMode] OCR text length=%d", (int)all_text.length());
 
-                            // 5. Offset bbox: crop_in_rgb → rgb → full_frame
-                            // ROI offset: rgb is centered in full_frame
                             int roi_offset_x = (full_frame.cols - rgb.cols) / 2;
                             int roi_offset_y = (full_frame.rows - rgb.rows) / 2;
-                            for (size_t i = 0; i < objects.size(); i++)
+                            for (size_t i = 0; i < capture_objects.size(); i++)
                             {
-                                objects[i].rrect.center.x += crop_x + roi_offset_x;
-                                objects[i].rrect.center.y += crop_y + roi_offset_y;
+                                capture_objects[i].rrect.center.x += crop_x + roi_offset_x;
+                                capture_objects[i].rrect.center.y += crop_y + roi_offset_y;
                             }
 
-                            // 6. Draw bounding boxes + text labels on the FULL sensor frame
-                            g_ppocrv5->draw(full_frame, objects);
+                            g_ppocrv5->draw(full_frame, capture_objects);
 
-                            // 7. Save the full frame with bounding boxes
                             cv::Mat bgr_full;
                             cv::cvtColor(full_frame, bgr_full, cv::COLOR_RGB2BGR);
                             
@@ -216,16 +480,7 @@ void MyNdkCamera::on_image_render(cv::Mat& rgb) const
                                 cropped_path = capture_save_path + "_crop.jpg";
                             }
                             cv::imwrite(cropped_path, bgr_full);
-                            __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "[PhotoMode] full frame with bbox saved to %s (%dx%d)", cropped_path.c_str(), bgr_full.cols, bgr_full.rows);
                         }
-                        else
-                        {
-                            __android_log_print(ANDROID_LOG_WARN, "ncnn", "[PhotoMode] crop dimensions invalid! crop_w=%d crop_h=%d vs full=%dx%d", crop_w, crop_h, full_frame.cols, full_frame.rows);
-                        }
-                    }
-                    else
-                    {
-                        __android_log_print(ANDROID_LOG_WARN, "ncnn", "[PhotoMode] target_norm not set! w=%.3f h=%.3f", target_norm_w, target_norm_h);
                     }
 
                     if (!cropped_path.empty()) {
@@ -234,98 +489,40 @@ void MyNdkCamera::on_image_render(cv::Mat& rgb) const
                         captured_photo_path = capture_save_path;
                     }
                     
-                    // Clear the full capture frame
                     const_cast<MyNdkCamera*>(this)->full_capture_rgb = cv::Mat();
                     capture_requested = false;
-                    __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "[PhotoMode] captured_photo_path=%s", captured_photo_path.c_str());
-                }
-                else
-                {
-                    // Preview mode: detect-only (no recognition) to show bounding boxes
-                    std::vector<Object> objects;
-                    g_ppocrv5->detect(rgb, objects);
-
-                    // Draw bounding boxes only (no text labels since no recognition)
-                    static const cv::Scalar bbox_color(80, 175, 76); // green
-                    for (size_t i = 0; i < objects.size(); i++)
-                    {
-                        cv::Point2f corners[4];
-                        objects[i].rrect.points(corners);
-                        cv::line(rgb, corners[0], corners[1], bbox_color, 2);
-                        cv::line(rgb, corners[1], corners[2], bbox_color, 2);
-                        cv::line(rgb, corners[2], corners[3], bbox_color, 2);
-                        cv::line(rgb, corners[3], corners[0], bbox_color, 2);
-                    }
                 }
             }
             else 
             {
                 // Realtime Mode
-                std::vector<Object> objects;
-                g_ppocrv5->detect_and_recognize(rgb, objects);
+                // Simply draw the most recently processed OCR objects from background thread
+                g_ppocrv5->draw(rgb, current_objects);
 
-                // extract OCR text from recognized objects
-                std::string all_text;
-                for (size_t i = 0; i < objects.size(); i++)
+                ncnn::MutexLockGuard cg(capture_lock);
+                if (capture_requested)
                 {
-                    std::string line_text;
-                    for (size_t j = 0; j < objects[i].text.size(); j++)
+                    cv::Mat final_rgb = rgb;
+                    if (target_norm_w > 0.0f && target_norm_h > 0.0f) 
                     {
-                        const Character& ch = objects[i].text[j];
-                        if (ch.id >= 0 && ch.id < character_dict_size)
+                        int crop_w = (int)(rgb.cols * target_norm_w);
+                        int crop_h = (int)(rgb.rows * target_norm_h);
+                        if (crop_w > 0 && crop_w <= rgb.cols && crop_h > 0 && crop_h <= rgb.rows) 
                         {
-                            line_text += character_dict[ch.id];
+                            int crop_x = (rgb.cols - crop_w) / 2;
+                            int crop_y = (rgb.rows - crop_h) / 2;
+                            cv::Rect crop_region(crop_x, crop_y, crop_w, crop_h);
+                            final_rgb = rgb(crop_region).clone();
                         }
                     }
-                    if (!line_text.empty())
-                    {
-                        if (!all_text.empty())
-                            all_text += "\n";
-                        all_text += line_text;
-                    }
+
+                    cv::Mat bgr;
+                    cv::cvtColor(final_rgb, bgr, cv::COLOR_RGB2BGR);
+                    cv::imwrite(capture_save_path, bgr);
+
+                    captured_photo_path = capture_save_path;
+                    capture_requested = false;
                 }
-
-                // store OCR text (thread-safe)
-                const_cast<MyNdkCamera*>(this)->set_ocr_text(all_text);
-
-                // handle photo capture request in realtime mode
-                {
-                    ncnn::MutexLockGuard cg(capture_lock);
-                    if (capture_requested)
-                    {
-                        // save the frame with OCR overlay drawn on it
-                        g_ppocrv5->draw(rgb, objects);
-
-                        cv::Mat final_rgb = rgb;
-                        if (target_norm_w > 0.0f && target_norm_h > 0.0f) 
-                        {
-                            int crop_w = (int)(rgb.cols * target_norm_w);
-                            int crop_h = (int)(rgb.rows * target_norm_h);
-                            if (crop_w > 0 && crop_w <= rgb.cols && crop_h > 0 && crop_h <= rgb.rows) 
-                            {
-                                int crop_x = (rgb.cols - crop_w) / 2;
-                                int crop_y = (rgb.rows - crop_h) / 2;
-                                cv::Rect crop_region(crop_x, crop_y, crop_w, crop_h);
-                                final_rgb = rgb(crop_region).clone();
-                            }
-                        }
-
-                        cv::Mat bgr;
-                        cv::cvtColor(final_rgb, bgr, cv::COLOR_RGB2BGR);
-                        cv::imwrite(capture_save_path, bgr);
-
-                        captured_photo_path = capture_save_path;
-                        capture_requested = false;
-                        __android_log_print(ANDROID_LOG_DEBUG, "ncnn", "photo saved to %s", captured_photo_path.c_str());
-
-#ifndef NDEBUG
-                        draw_fps(rgb);
-#endif
-                        return; // already drew overlay, skip drawing again
-                    }
-                }
-
-                g_ppocrv5->draw(rgb, objects);
             }
         }
         else
