@@ -180,7 +180,7 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(backgroundColor: Colors.green, content: Text('✅ Model berhasil dimuat dari HP!')),
+          const SnackBar(backgroundColor: Colors.green, content: Text('✅ Model successfully loaded from device!')),
         );
       }
 
@@ -191,7 +191,7 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(backgroundColor: Colors.red, content: Text('Gagal memuat model: $e')));
+        ).showSnackBar(SnackBar(backgroundColor: Colors.red, content: Text('Failed to load model: $e')));
       }
     }
   }
@@ -255,7 +255,7 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
     if (_mode == OcrMode.realtime && _ocrResult.isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(backgroundColor: Colors.red, content: Text("Tidak ada hasil OCR")));
+      ).showSnackBar(const SnackBar(backgroundColor: Colors.red, content: Text("No OCR result")));
       return;
     }
 
@@ -331,7 +331,7 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
         }
       }
     } catch (e) {
-      debugPrint("Gagal mengambil foto: $e");
+      debugPrint("Failed to take photo: $e");
       if (mounted) setState(() => _isLoadingModel = false);
     }
   }
@@ -348,7 +348,7 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Text(
-                "Hasil Auto-Crop & OCR",
+                "Auto-Crop & OCR Result",
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 textAlign: TextAlign.center,
               ),
@@ -361,10 +361,10 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
                   Expanded(
                     child: Column(
                       children: [
-                        const Text("Gambar Asli", style: TextStyle(fontSize: 12, color: Colors.black54)),
+                        const Text("Original Image", style: TextStyle(fontSize: 12, color: Colors.black54)),
                         const SizedBox(height: 4),
                         GestureDetector(
-                          onTap: () => _openFullScreenImage(context, capture.photoPath, "Gambar Asli"),
+                          onTap: () => _openFullScreenImage(context, capture.photoPath, "Original Image"),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(8),
                             child: Image.file(File(capture.photoPath), height: 140, fit: BoxFit.cover),
@@ -378,10 +378,10 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
                     Expanded(
                       child: Column(
                         children: [
-                          const Text("Hasil OCR", style: TextStyle(fontSize: 12, color: Colors.black54)),
+                          const Text("OCR Result", style: TextStyle(fontSize: 12, color: Colors.black54)),
                           const SizedBox(height: 4),
                           GestureDetector(
-                            onTap: () => _openFullScreenImage(context, capture.croppedPath, "Hasil OCR"),
+                            onTap: () => _openFullScreenImage(context, capture.croppedPath, "OCR Result"),
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(8),
                               child: Image.file(File(capture.croppedPath), height: 140, fit: BoxFit.contain),
@@ -401,7 +401,7 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
                 constraints: const BoxConstraints(maxHeight: 120),
                 child: SingleChildScrollView(
                   child: Text(
-                    capture.ocrText.isEmpty ? "Tidak ada teks terdeteksi" : capture.ocrText,
+                    capture.ocrText.isEmpty ? "No text detected" : capture.ocrText,
                     style: TextStyle(fontSize: 15, color: capture.ocrText.isEmpty ? Colors.black54 : Colors.black87),
                   ),
                 ),
@@ -413,7 +413,7 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
                   backgroundColor: Colors.green,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                child: const Text("Tutup", style: TextStyle(color: Colors.white)),
+                child: const Text("Close", style: TextStyle(color: Colors.white)),
               ),
             ],
           ),
@@ -635,15 +635,15 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
                 // Title
                 Text(
                   _mode == OcrMode.photo
-                      ? "Ambil Foto untuk Di-Crop"
-                      : (_showPreview ? "Hasil Foto" : "Arahkan kamera ke teks"),
+                      ? "Take Photo to Crop"
+                      : (_showPreview ? "Photo Result" : "Point camera at text"),
                   style: const TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 6),
                 Text(
                   _mode == OcrMode.photo
-                      ? "Pilih dari galeri atau kamera"
-                      : (_showPreview ? "Tekan foto lagi untuk scan baru" : "Pastikan teks berada di dalam area"),
+                      ? "Choose from gallery or camera"
+                      : (_showPreview ? "Tap photo again for new scan" : "Ensure text is inside the area"),
                   style: const TextStyle(color: Colors.black45, fontSize: 13),
                 ),
 
@@ -673,7 +673,7 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
                         Row(
                           children: [
                             const Text(
-                              "Hasil OCR",
+                              "OCR Result",
                               style: TextStyle(color: Colors.black, fontSize: 15, fontWeight: FontWeight.w600),
                             ),
                             const Spacer(),
@@ -689,7 +689,7 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
                                   children: [
                                     Icon(Icons.check_circle, color: Colors.green, size: 14),
                                     SizedBox(width: 4),
-                                    Text("Tersimpan", style: TextStyle(color: Colors.green, fontSize: 11)),
+                                    Text("Saved", style: TextStyle(color: Colors.green, fontSize: 11)),
                                   ],
                                 ),
                               ),
@@ -707,7 +707,7 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
                           ),
                           child: SingleChildScrollView(
                             child: Text(
-                              _ocrResult.isEmpty ? "Belum ada hasil" : _ocrResult,
+                              _ocrResult.isEmpty ? "No result yet" : _ocrResult,
                               style: TextStyle(
                                 color: _ocrResult.isEmpty ? Colors.black38 : Colors.black87,
                                 fontSize: 16,
@@ -739,7 +739,7 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
                         const SizedBox(width: 32),
                         _ActionButton(
                           icon: Icons.cameraswitch_rounded,
-                          label: "Putar",
+                          label: "Switch",
                           active: false,
                           activeColor: Colors.green,
                           onTap: _switchCamera,
@@ -748,7 +748,7 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
                           const SizedBox(width: 32),
                           _ActionButton(
                             icon: Icons.photo_library_outlined,
-                            label: "Riwayat",
+                            label: "History",
                             active: false,
                             activeColor: Colors.greenAccent,
                             onTap: _showHistory,
@@ -766,7 +766,7 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
                       onPressed: _showHistory,
                       icon: const Icon(Icons.photo_library_outlined, color: Colors.black54, size: 18),
                       label: Text(
-                        "Lihat semua (${_captureHistory.length})",
+                        "View all (${_captureHistory.length})",
                         style: const TextStyle(color: Colors.black54, fontSize: 13),
                       ),
                     ),
@@ -788,7 +788,7 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
                         size: 20,
                       ),
                       label: Text(
-                        _mode == OcrMode.photo ? "Ambil Foto" : (_showPreview ? "Foto Baru" : "Ambil Gambar"),
+                        _mode == OcrMode.photo ? "Take Photo" : (_showPreview ? "New Photo" : "Capture Image"),
                         style: const TextStyle(fontSize: 15),
                       ),
                       style: ElevatedButton.styleFrom(
@@ -841,7 +841,7 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
                         style: IconButton.styleFrom(backgroundColor: Colors.grey[100]),
                         icon: const Icon(Icons.folder_open_rounded, color: Colors.black87, size: 22),
                         onPressed: _loadModelFromPhone,
-                        tooltip: 'Muat model dari HP',
+                        tooltip: 'Load model from device',
                       ),
                       if (_modelLoaded)
                         Container(
@@ -852,7 +852,7 @@ class _OcrScanScreenState extends State<OcrScanScreen> with SingleTickerProvider
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(
-                            _modelSource == 'phone' ? '📱 HP' : '📦 Assets',
+                            _modelSource == 'phone' ? '📱 Device' : '📦 Assets',
                             style: TextStyle(
                               fontSize: 9,
                               fontWeight: FontWeight.w600,
@@ -971,11 +971,11 @@ class _ModelPickerSheetState extends State<_ModelPickerSheet> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Muat Model dari HP',
+                      'Load Model from Device',
                       style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.black87),
                     ),
                     Text(
-                      'Pilih file model NCNN dari penyimpanan',
+                      'Select NCNN model files from storage',
                       style: TextStyle(fontSize: 12, color: Colors.black45),
                     ),
                   ],
@@ -1009,7 +1009,7 @@ class _ModelPickerSheetState extends State<_ModelPickerSheet> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Aktif: ${widget.modelSource == 'phone' ? 'Model dari HP' : 'Model dari Assets'}',
+                      'Active: ${widget.modelSource == 'phone' ? 'Model from Device' : 'Model from Assets'}',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -1073,7 +1073,7 @@ class _ModelPickerSheetState extends State<_ModelPickerSheet> {
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
-                  child: const Text('Batal'),
+                  child: const Text('Cancel'),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1089,7 +1089,7 @@ class _ModelPickerSheetState extends State<_ModelPickerSheet> {
                         })
                       : null,
                   icon: const Icon(Icons.upload_rounded, size: 18),
-                  label: Text(_allSelected ? 'Muat Model' : 'Pilih semua file dulu'),
+                  label: Text(_allSelected ? 'Load Model' : 'Select all files first'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
                     foregroundColor: Colors.white,
@@ -1159,7 +1159,7 @@ class _ModelPickerSheetState extends State<_ModelPickerSheet> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    hasFile ? _fileName(path) : 'Tap untuk pilih file',
+                    hasFile ? _fileName(path) : 'Tap to select file',
                     style: TextStyle(
                       fontSize: 13,
                       color: hasFile ? Colors.black87 : Colors.grey,
@@ -1255,7 +1255,7 @@ class _HistorySheet extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             const Text(
-              "Riwayat Scan",
+              "Scan History",
               style: TextStyle(color: Colors.black87, fontSize: 17, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
@@ -1303,7 +1303,7 @@ class _HistorySheet extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  cap.ocrText.isEmpty ? "Tidak ada teks" : cap.ocrText,
+                                  cap.ocrText.isEmpty ? "No text" : cap.ocrText,
                                   style: TextStyle(
                                     color: cap.ocrText.isEmpty ? Colors.black38 : Colors.black87,
                                     fontSize: 15,
